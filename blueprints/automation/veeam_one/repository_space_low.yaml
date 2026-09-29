@@ -1,0 +1,125 @@
+blueprint:
+  name: Veeam ONE repository running out of space
+  description: >-
+    Notify when a backup repository's free space drops below a threshold, and optionally again
+    when it recovers.
+
+    Pick the **Free space percentage** sensors of the repositories to watch — Veeam Backup &
+    Replication repositories and Microsoft 365 repositories and object storage all have one.
+    To be warned ahead of time instead, see the *repository out-of-space forecast* blueprint.
+
+    Reloading the integration or restarting Home Assistant does not re-notify about a
+    repository that was already below the threshold.
+  domain: automation
+  source_url: https://github.com/Cenvora/ha-veeam-one/blob/main/blueprints/automation/veeam_one/repository_space_low.yaml
+  author: Cenvora
+  input:
+    free_space_sensors:
+      name: Free space percentage sensors
+      description: One or more Veeam ONE repository "Free space percentage" sensors.
+      selector:
+        entity:
+          multiple: true
+          filter:
+            - integration: veeam_one
+              domain: sensor
+    threshold:
+      name: Free space threshold
+      description: Notify once a repository has less than this much space free.
+      default: 15
+      selector:
+        number:
+          min: 1
+          max: 50
+          unit_of_measurement: "%"
+          mode: slider
+    sustained_for:
+      name: Sustained for
+      description: >-
+        How long the free space must stay below the threshold before notifying, so a job that
+        briefly fills a repository before its retention runs does not raise an alert.
+      default:
+        minutes: 15
+      selector:
+        duration:
+    notification_action:
+      name: Notification action
+      description: >-
+        What to run when the threshold is crossed. Available variables: `repository_name`,
+        `free_percent`, `free_space` (with its unit, when the Free space sensor exists),
+        `threshold`, `repository_entity_id`, and ready-made `title` and `message`.
+      selector:
+        action:
+    recovery_action:
+      name: Recovery action
+      description: >-
+        Optional. What to run when the repository has more than the threshold free again. The
+        same variables are available.
+      default: []
+      selector:
+        action:
+
+mode: queued
+max: 25
+
+triggers:
+  - trigger: numeric_state
+    entity_id: !input free_space_sensors
+    below: !input threshold
+    for: !input sustained_for
+    id: low
+  - trigger: numeric_state
+    entity_id: !input free_space_sensors
+    above: !input threshold
+    id: recovered
+
+conditions:
+  # Reloading the integration or restarting Home Assistant takes these sensors through
+  # unavailable, and a numeric_state trigger counts "unavailable -> 5" as a fresh crossing.
+  # Requiring a numeric previous state means only real crossings notify.
+  - condition: template
+    value_template: >-
+      {{ trigger.from_state is not none
+         and trigger.from_state.state | lower not in ['unknown', 'unavailable']
+         and trigger.from_state.state | float(-1) >= 0 }}
+
+variables:
+  threshold: !input threshold
+  repository_entity_id: "{{ trigger.entity_id }}"
+  free_percent: "{{ trigger.to_state.state }}"
+  # Each repository is its own device, named "Veeam ONE <name>"; the prefix is dropped. A
+  # name the user gave the device is used as-is.
+  repository_name: >-
+    {{ device_attr(trigger.entity_id, 'name_by_user')
+       or (device_attr(trigger.entity_id, 'name') or '') | regex_replace('^Veeam ONE ', '')
+       or trigger.to_state.name | regex_replace('(?i) free space percentage$', '')
+          | regex_replace('^Veeam ONE ', '') }}
+  # The Free space sensor on the same device, in whatever unit the user shows it in
+  free_space_entity: >-
+    {{ (device_entities(device_id(trigger.entity_id)) or [])
+       | select('search', '_free_space$') | list | first | default('') }}
+  free_space: >-
+    {%- set value = states(free_space_entity) if free_space_entity else '' -%}
+    {%- if value | float(-1) >= 0 -%}
+      {{ value | float | round(1) }} {{ state_attr(free_space_entity, 'unit_of_measurement') or '' }}
+    {%- endif -%}
+  title: >-
+    {{ 'Veeam ONE: ' ~ repository_name ~ ' is low on space'
+       if trigger.id == 'low'
+       else 'Veeam ONE: ' ~ repository_name ~ ' has space again' }}
+  message: >-
+    {{ repository_name }} has {{ free_percent }}% free
+    {{- ' (' ~ free_space | trim ~ ')' if free_space | trim }}
+    {{- ', under the ' ~ threshold ~ '% threshold.' if trigger.id == 'low'
+        else ' — back over ' ~ threshold ~ '%.' }}
+
+actions:
+  - choose:
+      - conditions:
+          - condition: trigger
+            id: low
+        sequence: !input notification_action
+      - conditions:
+          - condition: trigger
+            id: recovered
+        sequence: !input recovery_action

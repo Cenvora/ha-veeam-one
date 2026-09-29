@@ -1,0 +1,115 @@
+blueprint:
+  name: Veeam ONE repository out-of-space forecast
+  description: >-
+    Notify when Veeam ONE forecasts that a backup repository will run out of space within a
+    chosen number of days, and optionally again when the forecast moves back out.
+
+    Pick the **Days until out of space** sensors of the Veeam Backup & Replication
+    repositories to watch. Veeam ONE works this out from the repository's growth, so it warns
+    while there is still time to add capacity or change retention — well before a free space
+    threshold would. A repository Veeam ONE cannot forecast yet reports no value and is
+    skipped.
+
+    Reloading the integration or restarting Home Assistant does not re-notify about a
+    repository whose forecast was already inside the window.
+  domain: automation
+  source_url: https://github.com/Cenvora/ha-veeam-one/blob/main/blueprints/automation/veeam_one/repository_out_of_space_forecast.yaml
+  author: Cenvora
+  input:
+    forecast_sensors:
+      name: Days until out of space sensors
+      description: One or more Veeam ONE repository "Days until out of space" sensors.
+      selector:
+        entity:
+          multiple: true
+          filter:
+            - integration: veeam_one
+              domain: sensor
+              device_class: duration
+    days_before:
+      name: Warn with fewer days left than
+      description: Notify once the repository is forecast to be full in fewer days than this.
+      default: 14
+      selector:
+        number:
+          min: 1
+          max: 365
+          unit_of_measurement: days
+          mode: box
+    notification_action:
+      name: Notification action
+      description: >-
+        What to run when the forecast drops inside the window. Available variables:
+        `repository_name`, `days_left`, `days_before`, `repository_entity_id`, and ready-made
+        `title` and `message`.
+      selector:
+        action:
+    recovery_action:
+      name: Recovery action
+      description: >-
+        Optional. What to run when the forecast moves back outside the window. The same
+        variables are available.
+      default: []
+      selector:
+        action:
+
+mode: queued
+max: 25
+
+triggers:
+  # The forecast is a whole number of days: with 14, 13 or fewer alerts and 15 or more
+  # recovers, so a forecast wavering between 13 and 14 does not alert over and over
+  - trigger: numeric_state
+    entity_id: !input forecast_sensors
+    below: !input days_before
+    id: soon
+  - trigger: numeric_state
+    entity_id: !input forecast_sensors
+    above: !input days_before
+    id: recovered
+
+conditions:
+  # A numeric_state trigger counts "unavailable -> 5" as a fresh crossing, and a reload takes
+  # every sensor through unavailable. Requiring a numeric previous state means only real
+  # changes in the forecast notify.
+  - condition: template
+    value_template: >-
+      {{ trigger.from_state is not none
+         and trigger.from_state.state | lower not in ['unknown', 'unavailable']
+         and trigger.from_state.state | float(-1) >= 0 }}
+
+variables:
+  days_before: !input days_before
+  repository_entity_id: "{{ trigger.entity_id }}"
+  days_left: "{{ trigger.to_state.state | float(0) | round(0) | int }}"
+  # Each repository is its own device, named "Veeam ONE <name>"; the prefix is dropped. A
+  # name the user gave the device is used as-is.
+  repository_name: >-
+    {{ device_attr(trigger.entity_id, 'name_by_user')
+       or (device_attr(trigger.entity_id, 'name') or '') | regex_replace('^Veeam ONE ', '')
+       or trigger.to_state.name | regex_replace('(?i) days until out of space$', '')
+          | regex_replace('^Veeam ONE ', '') }}
+  title: >-
+    {%- if trigger.id == 'soon' -%}
+      Veeam ONE: {{ repository_name }} full in {{ days_left }} day{{ 's' if days_left != 1 }}
+    {%- else -%}
+      Veeam ONE: {{ repository_name }} no longer filling up soon
+    {%- endif -%}
+  message: >-
+    {{ 'Veeam ONE forecasts ' ~ repository_name ~ ' will run out of space in ' ~ days_left
+       ~ (' day' if days_left == 1 else ' days')
+       ~ '. Add capacity or shorten retention before then.'
+       if trigger.id == 'soon'
+       else 'Veeam ONE now forecasts ' ~ days_left ~ ' days before ' ~ repository_name
+       ~ ' is full, over the ' ~ days_before ~ '-day warning.' }}
+
+actions:
+  - choose:
+      - conditions:
+          - condition: trigger
+            id: soon
+        sequence: !input notification_action
+      - conditions:
+          - condition: trigger
+            id: recovered
+        sequence: !input recovery_action

@@ -1,0 +1,108 @@
+blueprint:
+  name: Veeam ONE running out of licenses
+  description: >-
+    Notify when the Veeam ONE license is nearly used up, and optionally again when usage drops
+    back.
+
+    Pick the **License … used percentage** sensors of the license units to watch — for
+    example *License Instances used percentage*. Veeam ONE stops monitoring new objects once
+    a unit is fully used, so this warns while there is still headroom.
+
+    Reloading the integration or restarting Home Assistant does not re-notify about usage that
+    was already over the threshold.
+  domain: automation
+  source_url: https://github.com/Cenvora/ha-veeam-one/blob/main/blueprints/automation/veeam_one/license_usage_high.yaml
+  author: Cenvora
+  input:
+    usage_sensors:
+      name: License used percentage sensors
+      description: One or more Veeam ONE "License … used percentage" sensors.
+      selector:
+        entity:
+          multiple: true
+          filter:
+            - integration: veeam_one
+              domain: sensor
+    threshold:
+      name: Usage threshold
+      description: Notify once more than this share of a license unit is in use.
+      default: 90
+      selector:
+        number:
+          min: 50
+          max: 99
+          unit_of_measurement: "%"
+          mode: slider
+    notification_action:
+      name: Notification action
+      description: >-
+        What to run when usage crosses the threshold. Available variables: `unit`,
+        `percent_used`, `used` and `licensed` (when their sensors exist), `threshold`,
+        `usage_entity_id`, and ready-made `title` and `message`.
+      selector:
+        action:
+    recovery_action:
+      name: Recovery action
+      description: Optional. What to run when usage drops back below the threshold.
+      default: []
+      selector:
+        action:
+
+mode: queued
+max: 10
+
+triggers:
+  - trigger: numeric_state
+    entity_id: !input usage_sensors
+    above: !input threshold
+    id: high
+  - trigger: numeric_state
+    entity_id: !input usage_sensors
+    below: !input threshold
+    id: recovered
+
+conditions:
+  # A reload takes the sensors through unavailable, and a numeric_state trigger counts
+  # "unavailable -> 95" as a fresh crossing. Requiring a numeric previous state means only
+  # real crossings notify.
+  - condition: template
+    value_template: >-
+      {{ trigger.from_state is not none
+         and trigger.from_state.state | lower not in ['unknown', 'unavailable']
+         and trigger.from_state.state | float(-1) >= 0 }}
+
+variables:
+  threshold: !input threshold
+  usage_entity_id: "{{ trigger.entity_id }}"
+  percent_used: "{{ trigger.to_state.state }}"
+  # "Veeam ONE License Instances used percentage" -> "Instances"
+  unit: >-
+    {{ trigger.to_state.name | regex_replace('^Veeam ONE ', '')
+       | regex_replace('^License ', '') | regex_replace('(?i) used percentage$', '') }}
+  # The used and licensed sensors sit beside this one: ..._used_percentage, ..._used, ..._licensed
+  used: >-
+    {%- set entity_id = trigger.entity_id | regex_replace('_percentage$', '') -%}
+    {{ states(entity_id) | int(none) if entity_id != trigger.entity_id else none }}
+  licensed: >-
+    {%- set entity_id = trigger.entity_id | regex_replace('_used_percentage$', '_licensed') -%}
+    {{ states(entity_id) | int(none) if entity_id != trigger.entity_id else none }}
+  title: >-
+    {{ 'Veeam ONE licenses nearly used up: ' ~ unit
+       if trigger.id == 'high'
+       else 'Veeam ONE license usage back to normal: ' ~ unit }}
+  message: >-
+    {{ unit }}: {{ percent_used }}% in use
+    {{- ' (' ~ used ~ ' of ' ~ licensed ~ ')' if used is number and licensed is number }}
+    {{- ', over the ' ~ threshold ~ '% threshold.' if trigger.id == 'high'
+        else ', back under ' ~ threshold ~ '%.' }}
+
+actions:
+  - choose:
+      - conditions:
+          - condition: trigger
+            id: high
+        sequence: !input notification_action
+      - conditions:
+          - condition: trigger
+            id: recovered
+        sequence: !input recovery_action

@@ -1,0 +1,195 @@
+blueprint:
+  name: Veeam ONE alarm triggered
+  description: >-
+    Notify when Veeam ONE triggers a new alarm or an alarm escalates from Warning to Error,
+    and optionally when alarms are resolved.
+
+    Pick the server's **Active alarms** sensor — not *Error alarms* or *Warning alarms*, which
+    only count. Its `alarms` attribute lists every alarm that still needs attention; this
+    compares that list poll by poll, so each alarm is reported once however long it stays
+    active, and alarms raised in the same poll arrive in one notification.
+
+    Your action receives the new alarms' IDs and the config entry, which is everything
+    `veeam_one.resolve_alarm` needs — for example to resolve them from an actionable
+    notification.
+
+    Reloading the integration or restarting Home Assistant does not re-report alarms that were
+    already active.
+  domain: automation
+  source_url: https://github.com/Cenvora/ha-veeam-one/blob/main/blueprints/automation/veeam_one/alarm_triggered.yaml
+  author: Cenvora
+  input:
+    alarm_sensors:
+      name: Active alarms sensors
+      description: The "Active alarms" sensor of one or more Veeam ONE servers.
+      selector:
+        entity:
+          multiple: true
+          filter:
+            - integration: veeam_one
+              domain: sensor
+    statuses:
+      name: Alarm statuses
+      description: >-
+        Which alarms to report. An alarm is reported when it first has one of these statuses.
+      default:
+        - Error
+        - Warning
+      selector:
+        select:
+          multiple: true
+          options:
+            - label: Error
+              value: Error
+            - label: Warning
+              value: Warning
+    include_escalations:
+      name: Report escalations
+      description: >-
+        Report an alarm again when it escalates from Warning to Error. Only applies when both
+        statuses are reported; otherwise the alarm is reported when it becomes an Error anyway.
+      default: true
+      selector:
+        boolean:
+    notification_action:
+      name: Notification action
+      description: >-
+        What to run when alarms are triggered. Available variables: `new_alarms` (a list of
+        `{id, name, status, triggered, object, description, repeat_count, escalated}`
+        mappings), `alarm_ids` (their IDs, for `veeam_one.resolve_alarm`), `entry_id` (for its
+        `config_entry_id`), `server_name`, and ready-made `title` and `message`.
+      selector:
+        action:
+    recovery_action:
+      name: Resolved action
+      description: >-
+        Optional. What to run when reported alarms are no longer active — resolved in Veeam ONE
+        or with `veeam_one.resolve_alarm`. Available variables: `resolved_alarms`,
+        `server_name`, `entry_id`, and ready-made `title` and `message`.
+      default: []
+      selector:
+        action:
+
+# Alarms from several servers can change in the same polling cycle
+mode: queued
+max: 10
+
+triggers:
+  # No to/from, so this also fires when only the alarms attribute changes — the count stays
+  # the same when one alarm resolves in the same poll another is raised
+  - trigger: state
+    entity_id: !input alarm_sensors
+
+variables:
+  statuses: !input statuses
+  include_escalations: !input include_escalations
+  # AlarmStatus values are capitalised ("Error"); compared lower-cased in case a later API
+  # revision changes that, as other Veeam APIs have
+  wanted: "{{ statuses | map('lower') | list }}"
+  # A reload or failed poll takes the sensor through unavailable, which drops the attribute;
+  # coming back from it is not a batch of new alarms. A restart starts from no state at all.
+  readable: >-
+    {{ trigger.from_state is not none and trigger.to_state is not none
+       and trigger.from_state.state | lower not in ['unknown', 'unavailable']
+       and trigger.to_state.state | lower not in ['unknown', 'unavailable'] }}
+  before: "{{ (trigger.from_state.attributes.alarms or []) | list if readable else [] }}"
+  after: "{{ (trigger.to_state.attributes.alarms or []) | list if readable else [] }}"
+  # The attribute holds the newest 50 alarms. While it is full, an older alarm moving into it
+  # (because a newer one resolved) is not new, and one pushed out of it is not resolved.
+  max_listed: 50
+  new_alarms: >-
+    {% set ns = namespace(items=[]) %}
+    {% set before_full = before | count >= max_listed %}
+    {% set oldest_before = before | map(attribute='triggered') | map('string') | min
+       if before | count > 0 else '' %}
+    {% for alarm in after %}
+      {% set status = (alarm.status or '') | lower %}
+      {% if alarm.id is not none and status in wanted %}
+        {% set previous = before | selectattr('id', 'eq', alarm.id) | list | first | default(none) %}
+        {% set previous_status = (previous.status or '') | lower if previous is not none else '' %}
+        {% set escalated = status == 'error' and previous_status == 'warning' %}
+        {% if previous is none %}
+          {% if not before_full or alarm.triggered | string > oldest_before %}
+            {% set ns.items = ns.items + [dict(alarm, escalated=false)] %}
+          {% endif %}
+        {% elif previous_status not in wanted or (include_escalations and escalated) %}
+          {% set ns.items = ns.items + [dict(alarm, escalated=escalated)] %}
+        {% endif %}
+      {% endif %}
+    {% endfor %}
+    {{ ns.items }}
+  resolved_alarms: >-
+    {% set ns = namespace(items=[]) %}
+    {% set after_full = after | count >= max_listed %}
+    {% set oldest_after = after | map(attribute='triggered') | map('string') | min
+       if after | count > 0 else '' %}
+    {% for alarm in before %}
+      {% if alarm.id is not none and (alarm.status or '') | lower in wanted
+            and after | selectattr('id', 'eq', alarm.id) | list | count == 0
+            and (not after_full or alarm.triggered | string >= oldest_after) %}
+        {% set ns.items = ns.items + [alarm] %}
+      {% endif %}
+    {% endfor %}
+    {{ ns.items }}
+  alarm_ids: "{{ new_alarms | map(attribute='id') | list }}"
+  entry_id: "{{ config_entry_id(trigger.entity_id) or '' }}"
+  # The entry is titled "Veeam ONE (<host>)"; the host is what reads well. A title or device
+  # name the user chose is used as-is.
+  server_name: >-
+    {%- set by_user = device_attr(trigger.entity_id, 'name_by_user') -%}
+    {%- set title = config_entry_attr(entry_id, 'title') if entry_id else none -%}
+    {%- if by_user -%}
+      {{ by_user }}
+    {%- elif title and title.startswith('Veeam ONE (') and title.endswith(')') -%}
+      {{ title[11:-1] }}
+    {%- else -%}
+      {{ title or 'Veeam ONE' }}
+    {%- endif -%}
+  title: >-
+    {%- if new_alarms | count == 1 -%}
+      {%- set alarm = new_alarms[0] -%}
+      Veeam ONE {{ 'alarm escalated' if alarm.escalated else (alarm.status or 'alarm') | lower }}:
+      {{- ' ' ~ (alarm.name or 'Unnamed alarm') }}
+    {%- else -%}
+      Veeam ONE: {{ new_alarms | count }} new alarms
+    {%- endif -%}
+  message: >-
+    {%- for alarm in new_alarms -%}
+      {{ alarm.status or 'Alarm' }}{{ ' (escalated)' if alarm.escalated }}:
+      {{- ' ' ~ (alarm.name or 'Unnamed alarm') }}
+      {{- ' on ' ~ alarm.object if alarm.object }}
+      {{- '. ' ~ alarm.description | trim if alarm.description }}
+      {{- '\n' }}
+    {%- endfor -%}
+    Server: {{ server_name }}.
+  resolved_title: >-
+    {%- if resolved_alarms | count == 1 -%}
+      Veeam ONE alarm resolved: {{ resolved_alarms[0].name or 'Unnamed alarm' }}
+    {%- else -%}
+      Veeam ONE: {{ resolved_alarms | count }} alarms resolved
+    {%- endif -%}
+  resolved_message: >-
+    {%- for alarm in resolved_alarms -%}
+      {{ alarm.name or 'Unnamed alarm' }}
+      {{- ' on ' ~ alarm.object if alarm.object }}
+      {{- ' is no longer active.\n' }}
+    {%- endfor -%}
+    Server: {{ server_name }}.
+
+conditions:
+  - condition: template
+    value_template: "{{ readable and (new_alarms | count > 0 or resolved_alarms | count > 0) }}"
+
+actions:
+  - if:
+      - condition: template
+        value_template: "{{ new_alarms | count > 0 }}"
+    then: !input notification_action
+  - if:
+      - condition: template
+        value_template: "{{ resolved_alarms | count > 0 }}"
+    then:
+      - variables:
+          title: "{{ resolved_title }}"
+          message: "{{ resolved_message }}"
+      - sequence: !input recovery_action
