@@ -126,6 +126,95 @@ class ObjectSensor(VeeamOneEntity, SensorEntity):
         return self._item().get(self.field)
 
 
+class LicenseSensor(CoordinatorEntity[VeeamOneCoordinator], SensorEntity):
+    """Expose a field from the installed Veeam ONE license."""
+
+    _attr_has_entity_name = True
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(self, coordinator: VeeamOneCoordinator, key: str, name: str) -> None:
+        super().__init__(coordinator)
+        self.key = key
+        self._attr_name = name
+        self._attr_unique_id = f"{coordinator.entry_id}_license_{key}"
+        self._attr_icon = "mdi:license"
+
+    @property
+    def native_value(self) -> Any:
+        value = self.coordinator.data.get("license", {}).get(self.key)
+        return None if isinstance(value, dict) else value
+
+    @property
+    def device_info(self) -> dict[str, Any]:
+        return {
+            "identifiers": {(DOMAIN, self.coordinator.entry_id)},
+            "name": "Veeam ONE",
+            "manufacturer": "Veeam",
+            "model": "Veeam ONE",
+        }
+
+
+class LicenseExpirationSensor(LicenseSensor):
+    """Days remaining until the Veeam ONE license expires."""
+
+    def __init__(self, coordinator: VeeamOneCoordinator) -> None:
+        super().__init__(coordinator, "expiration_days", "License Days Remaining")
+        self._attr_native_unit_of_measurement = "d"
+        self._attr_icon = "mdi:calendar-clock"
+
+    @property
+    def native_value(self) -> int | None:
+        value = self.coordinator.data.get("license", {}).get("expirationDate")
+        if not value:
+            return None
+        from datetime import datetime, timezone
+
+        try:
+            expiration = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        if expiration.tzinfo is None:
+            expiration = expiration.replace(tzinfo=timezone.utc)
+        return max(0, (expiration - datetime.now(timezone.utc)).days)
+
+
+class LicenseUsageSensor(CoordinatorEntity[VeeamOneCoordinator], SensorEntity):
+    """Expose a current Veeam ONE license usage value."""
+
+    _attr_has_entity_name = True
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(self, coordinator: VeeamOneCoordinator, unit: dict[str, Any], field: str) -> None:
+        super().__init__(coordinator)
+        self.unit = str(unit.get("licenseUnit") or "Unknown")
+        self.field = field
+        label = field.capitalize()
+        self._attr_name = f"License {self.unit} {label}"
+        slug = self.unit.lower().replace(" ", "_")
+        self._attr_unique_id = f"{coordinator.entry_id}_license_{slug}_{field}"
+        self._attr_icon = "mdi:counter"
+
+    @property
+    def native_value(self) -> int | None:
+        for unit in self.coordinator.data.get("license_usage", {}).get("units", []) or []:
+            if str(unit.get("licenseUnit") or "Unknown") == self.unit:
+                value = unit.get(self.field)
+                try:
+                    return int(value) if value is not None else None
+                except (TypeError, ValueError):
+                    return None
+        return None
+
+    @property
+    def device_info(self) -> dict[str, Any]:
+        return {
+            "identifiers": {(DOMAIN, self.coordinator.entry_id)},
+            "name": "Veeam ONE",
+            "manufacturer": "Veeam",
+            "model": "Veeam ONE",
+        }
+
+
 async def async_setup_entry(hass: Any, entry: Any, async_add_entities: Any) -> None:
     """Set up Veeam ONE sensors."""
     coordinator: VeeamOneCoordinator = entry.runtime_data
