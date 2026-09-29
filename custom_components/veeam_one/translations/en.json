@@ -4,11 +4,58 @@
       "user": {
         "title": "Connect to Veeam ONE",
         "description": "Enter your Veeam ONE REST API connection details.",
-        "data": {"host":"Host","port":"Port","username":"Username","password":"Password","verify_ssl":"Verify SSL Certificate"},
-        "data_description": {"port":"REST API port (default: 1239)"}
+        "data": {
+          "host": "Host",
+          "port": "Port",
+          "username": "Username",
+          "password": "Password",
+          "verify_ssl": "Verify SSL Certificate"
+        },
+        "data_description": {
+          "host": "Hostname or IP address of the Veeam ONE Web Services host",
+          "port": "REST API port (default: 1239)",
+          "username": "Veeam ONE account",
+          "password": "Password for the account",
+          "verify_ssl": "Disable only when using a certificate Home Assistant does not trust"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Reauthenticate Veeam ONE",
+        "description": "Veeam ONE rejected the stored credentials. Enter them again.",
+        "data": {
+          "username": "Username",
+          "password": "Password"
+        }
       }
     },
-    "error": {"cannot_connect":"Failed to connect to Veeam ONE","invalid_auth":"Invalid authentication credentials","unknown":"Unexpected error occurred"},
-    "abort": {"already_configured":"This Veeam ONE server is already configured"}
+    "error": {
+      "cannot_connect": "Failed to connect to Veeam ONE",
+      "invalid_auth": "Invalid authentication credentials",
+      "unknown": "Unexpected error occurred"
+    },
+    "abort": {
+      "already_configured": "This Veeam ONE server is already configured",
+      "reauth_successful": "Reauthentication was successful"
+    }
+  },
+  "services": {
+    "resolve_alarm": {
+      "name": "Resolve alarm",
+      "description": "Resolves triggered Veeam ONE alarms. Alarm IDs are listed in the alarms attribute of the Active Alarms sensor.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Veeam ONE server",
+          "description": "Server that raised the alarms. Needed only when more than one is configured."
+        },
+        "alarm_ids": {
+          "name": "Alarm IDs",
+          "description": "IDs of the triggered alarms to resolve."
+        },
+        "comment": {
+          "name": "Comment",
+          "description": "Comment recorded on the resolved alarms."
+        }
+      }
+    }
   }
 }

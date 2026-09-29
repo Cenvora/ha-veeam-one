@@ -1,0 +1,15 @@
+resolve_alarm:
+  fields:
+    config_entry_id:
+      selector:
+        config_entry:
+          integration: veeam_one
+    alarm_ids:
+      required: true
+      example: "[1234]"
+      selector:
+        object:
+    comment:
+      default: Resolved from Home Assistant
+      selector:
+        text:

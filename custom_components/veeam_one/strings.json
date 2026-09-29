@@ -18,6 +18,14 @@
           "password": "Password for the account",
           "verify_ssl": "Disable only when using a certificate Home Assistant does not trust"
         }
+      },
+      "reauth_confirm": {
+        "title": "Reauthenticate Veeam ONE",
+        "description": "Veeam ONE rejected the stored credentials. Enter them again.",
+        "data": {
+          "username": "Username",
+          "password": "Password"
+        }
       }
     },
     "error": {
@@ -26,7 +34,28 @@
       "unknown": "Unexpected error occurred"
     },
     "abort": {
-      "already_configured": "This Veeam ONE server is already configured"
+      "already_configured": "This Veeam ONE server is already configured",
+      "reauth_successful": "Reauthentication was successful"
+    }
+  },
+  "services": {
+    "resolve_alarm": {
+      "name": "Resolve alarm",
+      "description": "Resolves triggered Veeam ONE alarms. Alarm IDs are listed in the alarms attribute of the Active Alarms sensor.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Veeam ONE server",
+          "description": "Server that raised the alarms. Needed only when more than one is configured."
+        },
+        "alarm_ids": {
+          "name": "Alarm IDs",
+          "description": "IDs of the triggered alarms to resolve."
+        },
+        "comment": {
+          "name": "Comment",
+          "description": "Comment recorded on the resolved alarms."
+        }
+      }
     }
   }
 }

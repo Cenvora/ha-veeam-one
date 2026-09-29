@@ -2,112 +2,141 @@
 
 from __future__ import annotations
 
-import re
+from collections.abc import Callable, Iterable
+from datetime import datetime, timezone
 from typing import Any
 
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import callback
+from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.helpers.entity import Entity
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN
-from .coordinator import VeeamOneCoordinator
+from .const import DEFAULT_NAME, DOMAIN
+from .coordinator import COLLECTIONS, VeeamOneCoordinator, resource_name
+
+# Alarm statuses that still need attention; Resolved, Success and Remediated alarms don't.
+ACTIVE_ALARM_STATUSES = ("Error", "Warning")
 
 
-def resource_id(item: dict[str, Any]) -> str | None:
-    """Return the stable identifier used by a Veeam ONE resource."""
-    for key in (
-        "id",
-        "uid",
-        "resourceId",
-        "vmBackupJobUid",
-        "vmReplicationJobUid",
-        "vmCopyJobUid",
-        "repositoryId",
-        "backupJobId",
-        "copyJobId",
-        "hostId",
-        "clusterId",
-        "virtualMachineId",
-        "vmId",
-        "vCenterId",
-        "datastoreId",
-        "datastoreClusterId",
-        "resourcePoolId",
-        "vAppId",
-        "organizationId",
-        "orgVdcId",
-        "providerVdcId",
-        "serverId",
-        "tenantId",
-        "gatewayId",
-        "gatewayPoolId",
-        "proxyId",
-        "objectStorageRepositoryId",
-        "siteId",
-        "teamId",
-        "userId",
-        "groupId",
-        "fileServerId",
-        "fileShareId",
-        "physicalDiskId",
-        "databaseId",
-    ):
-        value = item.get(key)
-        if value is not None:
-            return str(value)
-    return None
+def resource_identifier(entry_id: str, key: str, object_id: str) -> str:
+    """Device identifier for a resource. Entry IDs and collection keys never contain ':'."""
+    return f"{entry_id}:{key}:{object_id}"
 
 
-def resource_name(item: dict[str, Any], fallback: str) -> str:
-    """Return a human-readable resource name."""
-    for key in ("name", "displayName", "hostName", "serverName"):
-        value = item.get(key)
-        if isinstance(value, str) and value:
-            return value
-    return fallback
+def parse_timestamp(value: Any) -> datetime | None:
+    """Parse an API timestamp, assuming UTC when it carries no zone."""
+    if not value:
+        return None
+    if isinstance(value, datetime):
+        result = value
+    else:
+        try:
+            result = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    return result if result.tzinfo else result.replace(tzinfo=timezone.utc)
 
 
-def device_name(kind: str, name: str) -> str:
-    """Name a resource device consistently."""
-    if re.search(rf"\b{re.escape(kind)}\b", name, re.IGNORECASE):
-        return f"Veeam ONE {name}"
-    return f"Veeam ONE {kind} {name}"
+def active_alarms(data: dict[str, Any], status: str | None = None) -> list[dict[str, Any]]:
+    """Alarms still needing attention, optionally only those with one status."""
+    wanted = (status,) if status else ACTIVE_ALARM_STATUSES
+    return [alarm for alarm in data.get("alarms", []) if alarm.get("status") in wanted]
 
 
-def device_info(
-    coordinator: VeeamOneCoordinator, kind: str, object_id: str, name: str
-) -> dict[str, Any]:
-    """Return Home Assistant device information for a resource."""
-    return {
-        "identifiers": {(DOMAIN, coordinator.entry_id, kind, object_id)},
-        "name": device_name(kind.replace("_", " ").title(), name),
-        "manufacturer": "Veeam",
-        "model": f"Veeam ONE {kind.replace('_', ' ').title()}",
-    }
+def add_entities_dynamically(
+    coordinator: VeeamOneCoordinator,
+    entry: ConfigEntry,
+    async_add_entities: AddEntitiesCallback,
+    build: Callable[[], Iterable[VeeamOneEntity]],
+) -> None:
+    """Add the entities `build` returns now and whenever an update brings new ones."""
+
+    @callback
+    def _add() -> None:
+        new = [entity for entity in build() if entity.unique_id not in coordinator.known_ids]
+        if new:
+            coordinator.known_ids.update(entity.unique_id for entity in new if entity.unique_id)
+            async_add_entities(new)
+
+    _add()
+    entry.async_on_unload(coordinator.async_add_listener(_add))
 
 
-class VeeamOneEntity(CoordinatorEntity[VeeamOneCoordinator]):
-    """Base Veeam ONE entity."""
+class VeeamOneEntity(CoordinatorEntity[VeeamOneCoordinator], Entity):
+    """An entity on the Veeam ONE server device."""
 
     _attr_has_entity_name = True
 
-    def __init__(
-        self, coordinator: VeeamOneCoordinator, kind: str, object_id: str, name: str
-    ) -> None:
+    def __init__(self, coordinator: VeeamOneCoordinator, key: str, name: str) -> None:
         super().__init__(coordinator)
-        self.kind = kind
-        self.object_id = object_id
-        self.resource_name = name
+        self._attr_name = name
+        self._attr_unique_id = f"{coordinator.entry_id}_{key}"
 
     @property
-    def device_info(self) -> dict[str, Any]:
-        return device_info(self.coordinator, self.kind, self.object_id, self.resource_name)
+    def device_info(self) -> DeviceInfo:
+        return DeviceInfo(
+            identifiers={(DOMAIN, self.coordinator.entry_id)},
+            name=DEFAULT_NAME,
+            manufacturer="Veeam",
+            model=DEFAULT_NAME,
+            sw_version=self.coordinator.data.get("service", {}).get("version"),
+        )
+
+    async def async_will_remove_from_hass(self) -> None:
+        # Forget the entity so it is re-added if its resource comes back.
+        self.coordinator.known_ids.discard(self.unique_id or "")
+        await super().async_will_remove_from_hass()
+
+
+class ResourceEntity(VeeamOneEntity):
+    """An entity on a resource's own device."""
+
+    def __init__(
+        self, coordinator: VeeamOneCoordinator, key: str, object_id: str, suffix: str, name: str
+    ) -> None:
+        super().__init__(coordinator, f"{key}_{object_id}_{suffix}", name)
+        self.collection_key = key
+        self.collection = COLLECTIONS[key]
+        self.object_id = object_id
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        item = self.item()
+        return DeviceInfo(
+            identifiers={
+                (
+                    DOMAIN,
+                    resource_identifier(
+                        self.coordinator.entry_id, self.collection_key, self.object_id
+                    ),
+                )
+            },
+            name=f"{DEFAULT_NAME} {resource_name(item, self.object_id)}",
+            manufacturer="Veeam",
+            model=self.collection.model,
+            via_device_id=self.coordinator.device_id,
+        )
 
     def item(self) -> dict[str, Any]:
-        """Find this resource in the latest coordinator data."""
-        for item in self.coordinator.data.get("collections", {}).get(self.kind, []):
-            if resource_id(item) == self.object_id:
-                return item
-        return {}
+        """This resource in the latest coordinator data."""
+        resources = self.coordinator.data.get("resources", {}).get(self.collection_key, {})
+        return resources.get(self.object_id, {})
 
     @property
     def available(self) -> bool:
         return super().available and bool(self.item())
+
+
+def resources(coordinator: VeeamOneCoordinator) -> Iterable[tuple[str, str, dict[str, Any]]]:
+    """Every (collection key, object ID, item) with its own device."""
+    for key, items in coordinator.data.get("resources", {}).items():
+        for object_id, item in items.items():
+            yield key, object_id, item
+
+
+def populated_collections(coordinator: VeeamOneCoordinator) -> list[str]:
+    """Collections that have returned at least one resource."""
+    totals = coordinator.data.get("totals", {})
+    return [key for key in COLLECTIONS if totals.get(key)]
