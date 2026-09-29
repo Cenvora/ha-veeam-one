@@ -12,6 +12,13 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .const import DOMAIN
 from .coordinator import COLLECTIONS, VeeamOneCoordinator
 from .entity import VeeamOneEntity, resource_id, resource_name
+from .monitoring import (
+    AlarmSeveritySensor,
+    CollectionHealthSensor,
+    LicenseUsagePercentageSensor,
+    ServiceSensor,
+    _healthy,
+)
 
 
 def _status(item: dict[str, Any]) -> str | None:
@@ -99,21 +106,7 @@ class FailedCollectionSensor(CollectionSensor):
     @property
     def native_value(self) -> int:
         resources = self.coordinator.data.get("collections", {}).get(self.key, [])
-        healthy = (
-            "success",
-            "successful",
-            "normal",
-            "connected",
-            "online",
-            "available",
-            "ok",
-            "ready",
-        )
-        return sum(
-            1
-            for item in resources
-            if (state := _status(item)) and not any(x in state.lower() for x in healthy)
-        )
+        return sum(1 for item in resources if (state := _status(item)) and not _healthy(state))
 
 
 class ResourceStatusSensor(VeeamOneEntity, SensorEntity):
@@ -461,7 +454,15 @@ def _resource_entities(coordinator: VeeamOneCoordinator) -> list[SensorEntity]:
 async def async_setup_entry(hass: Any, entry: Any, async_add_entities: Any) -> None:
     """Set up Veeam ONE sensors."""
     coordinator: VeeamOneCoordinator = entry.runtime_data
-    entities: list[SensorEntity] = [OverviewSensor(coordinator)]
+    entities: list[SensorEntity] = [
+        OverviewSensor(coordinator),
+        ServiceSensor(coordinator, "status", "Service Status"),
+        ServiceSensor(coordinator, "version", "Version"),
+        ServiceSensor(coordinator, "build", "Build"),
+        AlarmSeveritySensor(coordinator, "critical"),
+        AlarmSeveritySensor(coordinator, "warning"),
+        AlarmSeveritySensor(coordinator, "info"),
+    ]
     for key, name in (
         ("type", "License Type"),
         ("package", "License Package"),
@@ -477,9 +478,14 @@ async def async_setup_entry(hass: Any, entry: Any, async_add_entities: Any) -> N
         if isinstance(unit, dict):
             for field in ("used", "available", "licensed"):
                 entities.append(LicenseUsageSensor(coordinator, unit, field))
+            entities.append(LicenseUsagePercentageSensor(coordinator, unit))
     for key in COLLECTIONS:
         entities.extend(
-            (CollectionSensor(coordinator, key), FailedCollectionSensor(coordinator, key))
+            (
+                CollectionSensor(coordinator, key),
+                FailedCollectionSensor(coordinator, key),
+                CollectionHealthSensor(coordinator, key),
+            )
         )
     entities.extend(_resource_entities(coordinator))
     async_add_entities(entities)

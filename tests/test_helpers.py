@@ -1,5 +1,6 @@
 from custom_components.veeam_one.coordinator import COLLECTIONS, as_dict, items
 from custom_components.veeam_one.entity import resource_id, resource_name
+from custom_components.veeam_one.monitoring import _healthy, _severity
 
 
 class Model:
@@ -36,3 +37,17 @@ def test_resource_id_supports_generated_sdk_identifiers():
 def test_resource_name_falls_back_cleanly():
     assert resource_name({"name": "Nightly"}, "fallback") == "Nightly"
     assert resource_name({}, "fallback") == "fallback"
+
+
+def test_monitoring_health_requires_known_healthy_status():
+    assert _healthy("Success")
+    assert _healthy("running")
+    assert not _healthy("Warning")
+    assert not _healthy("Unknown")
+
+
+def test_alarm_severity_supports_common_fields():
+    assert _severity({"severity": "Critical"}) == "critical"
+    assert _severity({"alarmSeverity": "Warning"}) == "warning"
+    assert _severity({"level": "Info"}) == "info"
+    assert _severity({}) is None

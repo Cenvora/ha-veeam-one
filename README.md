@@ -35,6 +35,8 @@ Common resource entities include:
 
 - **Status** — Veeam ONE status, state, connection state or power state
 - **Problem** — binary health indicator
+- **Collection Health** — percentage of resources with a known healthy status
+- **Collection Problem** — collection-level binary health indicator
 - **Last Run** and **Last Run Duration** for workloads that report job sessions
 - **Average Run Duration** and **Last Transferred Data** where available
 - **Capacity**, **Free Space**, **Free Space Percentage**, **Running Tasks** and **Days Until Out of Space** for repositories/resources that expose those values
@@ -52,11 +54,16 @@ The Veeam ONE device exposes:
 - Licensed instances and sockets
 - License company
 - License expiration and support-expiration countdowns
-- Current license-unit usage: used, available and licensed
+- Current license-unit usage: used, available, licensed and utilization percentage
+- License Expired and License Support Expired binary health indicators
+
+### Veeam ONE service
+
+The Veeam ONE device also exposes service/about information including service status, version and build when returned by the API.
 
 ### Alarms
 
-Triggered alarms are exposed individually and receive a **Resolve** button. Resolving an alarm uses the Veeam ONE REST API and refreshes the integration afterward.
+Triggered alarms are exposed individually and receive a **Resolve** button. Aggregate critical, warning and informational alarm counts are also provided. Resolving an alarm uses the Veeam ONE REST API and refreshes the integration afterward.
 
 ## Actions
 
