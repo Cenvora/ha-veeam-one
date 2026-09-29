@@ -19,6 +19,8 @@ from .entity import (
     resources,
 )
 
+PARALLEL_UPDATES = 0
+
 
 class ConnectedSensor(VeeamOneEntity, BinarySensorEntity):
     """Whether the latest poll of the Veeam ONE API succeeded."""
@@ -26,7 +28,7 @@ class ConnectedSensor(VeeamOneEntity, BinarySensorEntity):
     _attr_device_class = BinarySensorDeviceClass.CONNECTIVITY
 
     def __init__(self, coordinator: VeeamOneCoordinator) -> None:
-        super().__init__(coordinator, "connected", "Connected")
+        super().__init__(coordinator, "connected", "connected")
 
     @property
     def available(self) -> bool:
@@ -41,10 +43,9 @@ class LicenseExpiredSensor(VeeamOneEntity, BinarySensorEntity):
     """Whether the license, or its support, has expired."""
 
     _attr_device_class = BinarySensorDeviceClass.PROBLEM
-    _attr_icon = "mdi:license"
 
-    def __init__(self, coordinator: VeeamOneCoordinator, field: str, key: str, name: str) -> None:
-        super().__init__(coordinator, key, name)
+    def __init__(self, coordinator: VeeamOneCoordinator, field: str, key: str) -> None:
+        super().__init__(coordinator, key, key)
         self.field = field
 
     @property
@@ -61,7 +62,12 @@ class CollectionProblemSensor(VeeamOneEntity, BinarySensorEntity):
     _attr_device_class = BinarySensorDeviceClass.PROBLEM
 
     def __init__(self, coordinator: VeeamOneCoordinator, key: str) -> None:
-        super().__init__(coordinator, f"{key}_problem", f"{COLLECTIONS[key].label} Problem")
+        super().__init__(
+            coordinator,
+            f"{key}_problem",
+            "collection_problem",
+            {"collection": COLLECTIONS[key].label},
+        )
         self.key = key
 
     @property
@@ -78,7 +84,7 @@ class ResourceProblemSensor(ResourceEntity, BinarySensorEntity):
     _attr_device_class = BinarySensorDeviceClass.PROBLEM
 
     def __init__(self, coordinator: VeeamOneCoordinator, key: str, object_id: str) -> None:
-        super().__init__(coordinator, key, object_id, "problem", "Problem")
+        super().__init__(coordinator, key, object_id, "problem", "problem")
 
     @property
     def is_on(self) -> bool | None:
@@ -88,13 +94,8 @@ class ResourceProblemSensor(ResourceEntity, BinarySensorEntity):
 def _entities(coordinator: VeeamOneCoordinator) -> list[VeeamOneEntity]:
     entities: list[VeeamOneEntity] = [
         ConnectedSensor(coordinator),
-        LicenseExpiredSensor(coordinator, "expirationDate", "license_expired", "License Expired"),
-        LicenseExpiredSensor(
-            coordinator,
-            "supportExpirationDate",
-            "license_support_expired",
-            "License Support Expired",
-        ),
+        LicenseExpiredSensor(coordinator, "expirationDate", "license_expired"),
+        LicenseExpiredSensor(coordinator, "supportExpirationDate", "license_support_expired"),
     ]
     entities.extend(
         CollectionProblemSensor(coordinator, key)

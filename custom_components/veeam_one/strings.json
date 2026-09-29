@@ -9,39 +9,160 @@
           "port": "Port",
           "username": "Username",
           "password": "Password",
-          "verify_ssl": "Verify SSL Certificate"
+          "verify_ssl": "Verify SSL certificate",
+          "api_version": "API version"
         },
         "data_description": {
-          "host": "Hostname or IP address of the Veeam ONE Web Services host",
+          "host": "Hostname or IP address of the Veeam ONE Web Services server",
           "port": "REST API port (default: 1239)",
-          "username": "Veeam ONE account",
+          "username": "Veeam ONE account, e.g. DOMAIN\\user",
           "password": "Password for the account",
-          "verify_ssl": "Disable only when using a certificate Home Assistant does not trust"
+          "verify_ssl": "Disable only when the server uses a certificate Home Assistant does not trust",
+          "api_version": "Leave on Automatic to use the newest version the server supports"
+        }
+      },
+      "reconfigure": {
+        "title": "Reconfigure Veeam ONE",
+        "description": "Change the server or credentials this entry connects with.",
+        "data": {
+          "host": "Host",
+          "port": "Port",
+          "username": "Username",
+          "password": "Password",
+          "verify_ssl": "Verify SSL certificate"
+        },
+        "data_description": {
+          "host": "Hostname or IP address of the Veeam ONE Web Services server",
+          "port": "REST API port (default: 1239)",
+          "username": "Veeam ONE account, e.g. DOMAIN\\user",
+          "password": "Password for the account",
+          "verify_ssl": "Disable only when the server uses a certificate Home Assistant does not trust"
         }
       },
       "reauth_confirm": {
         "title": "Reauthenticate Veeam ONE",
-        "description": "Veeam ONE rejected the stored credentials. Enter them again.",
+        "description": "Veeam ONE at {host} rejected the stored credentials. Enter them again.",
         "data": {
           "username": "Username",
           "password": "Password"
+        },
+        "data_description": {
+          "username": "Veeam ONE account, e.g. DOMAIN\\user",
+          "password": "Password for the account"
         }
       }
     },
     "error": {
       "cannot_connect": "Failed to connect to Veeam ONE",
       "invalid_auth": "Invalid authentication credentials",
+      "wrong_port": "Veeam ONE did not answer on that port, but it did on port {wrong_port}",
       "unknown": "Unexpected error occurred"
     },
     "abort": {
       "already_configured": "This Veeam ONE server is already configured",
-      "reauth_successful": "Reauthentication was successful"
+      "reauth_successful": "Reauthentication was successful",
+      "reconfigure_successful": "Reconfiguration was successful"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Veeam ONE options",
+        "data": {
+          "api_version": "API version"
+        },
+        "data_description": {
+          "api_version": "Leave on Automatic to use the newest version the server supports"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect to Veeam ONE",
+      "invalid_auth": "Invalid authentication credentials",
+      "wrong_port": "Veeam ONE did not answer on that port, but it did on port {wrong_port}",
+      "unknown": "Unexpected error occurred"
+    }
+  },
+  "selector": {
+    "api_version": {
+      "options": {
+        "auto": "Automatic"
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "version": { "name": "Version" },
+      "active_alarms": { "name": "Active alarms" },
+      "error_alarms": { "name": "Error alarms" },
+      "warning_alarms": { "name": "Warning alarms" },
+      "license_type": { "name": "License type" },
+      "license_package": { "name": "License package" },
+      "license_company": { "name": "License company" },
+      "license_instances": { "name": "Licensed instances" },
+      "license_sockets": { "name": "Licensed sockets" },
+      "license_days_remaining": { "name": "License days remaining" },
+      "license_support_days_remaining": { "name": "License support days remaining" },
+      "license_unit_used": { "name": "License {unit} used" },
+      "license_unit_licensed": { "name": "License {unit} licensed" },
+      "license_unit_used_percentage": { "name": "License {unit} used percentage" },
+      "collection_count": { "name": "{collection}" },
+      "collection_health": { "name": "{collection} health" },
+      "status": { "name": "Status" },
+      "last_run": { "name": "Last run" },
+      "last_run_duration": { "name": "Last run duration" },
+      "average_run_duration": { "name": "Average run duration" },
+      "last_transferred_data": { "name": "Last transferred data" },
+      "processed_items": { "name": "Processed items" },
+      "capacity": { "name": "Capacity" },
+      "free_space": { "name": "Free space" },
+      "used_space": { "name": "Used space" },
+      "running_tasks": { "name": "Running tasks" },
+      "days_until_out_of_space": { "name": "Days until out of space" },
+      "free_space_percentage": { "name": "Free space percentage" }
+    },
+    "binary_sensor": {
+      "connected": { "name": "Connected" },
+      "license_expired": { "name": "License expired" },
+      "license_support_expired": { "name": "License support expired" },
+      "collection_problem": { "name": "{collection} problem" },
+      "problem": { "name": "Problem" }
+    }
+  },
+  "exceptions": {
+    "authentication_failed": {
+      "message": "Veeam ONE rejected the credentials for {username}"
+    },
+    "connection_error": {
+      "message": "Failed to connect to Veeam ONE at {host}:{port}: {error}"
+    },
+    "update_failed": {
+      "message": "Error communicating with Veeam ONE: {error}"
+    },
+    "no_loaded_entry": {
+      "message": "No loaded Veeam ONE server matches"
+    },
+    "multiple_entries": {
+      "message": "More than one Veeam ONE server is configured; choose one with config_entry_id"
+    },
+    "resolve_failed": {
+      "message": "Unable to resolve the Veeam ONE alarms: {error}"
+    }
+  },
+  "issues": {
+    "license_expiring": {
+      "title": "Veeam ONE license on {host} expires soon",
+      "description": "The Veeam ONE license on **{host}** expires on {date}, in {days} days. Once it expires, Veeam ONE stops collecting data and this integration's sensors stop updating.\n\nInstall a renewed license in the Veeam ONE Client. This warning clears on its own once the new license is reported."
+    },
+    "license_expired": {
+      "title": "Veeam ONE license on {host} has expired",
+      "description": "The Veeam ONE license on **{host}** expired on {date}. Veeam ONE no longer collects data from the servers it monitors, so the values this integration reports are out of date.\n\nInstall a renewed license in the Veeam ONE Client. This warning clears on its own once the new license is reported."
     }
   },
   "services": {
     "resolve_alarm": {
       "name": "Resolve alarm",
-      "description": "Resolves triggered Veeam ONE alarms. Alarm IDs are listed in the alarms attribute of the Active Alarms sensor.",
+      "description": "Resolves triggered Veeam ONE alarms. Alarm IDs are listed in the alarms attribute of the Active alarms sensor.",
       "fields": {
         "config_entry_id": {
           "name": "Veeam ONE server",

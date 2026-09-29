@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
@@ -22,6 +23,11 @@ from .entity import (
     resources,
 )
 
+PARALLEL_UPDATES = 0
+
+# Licensed sockets are 0 on instance-based licenses, which is most of them
+DISABLED_LICENSE_FIELDS = {"sockets"}
+
 # Alarm list attribute is capped so a flood of alarms can't bloat the recorder.
 MAX_ALARM_ATTRIBUTES = 50
 
@@ -30,10 +36,9 @@ class VersionSensor(VeeamOneEntity, SensorEntity):
     """Installed Veeam ONE version."""
 
     _attr_entity_category = EntityCategory.DIAGNOSTIC
-    _attr_icon = "mdi:information-outline"
 
     def __init__(self, coordinator: VeeamOneCoordinator) -> None:
-        super().__init__(coordinator, "version", "Version")
+        super().__init__(coordinator, "version", "version")
 
     @property
     def native_value(self) -> str | None:
@@ -44,11 +49,10 @@ class AlarmCountSensor(VeeamOneEntity, SensorEntity):
     """Triggered alarms still needing attention, overall or for one status."""
 
     _attr_state_class = SensorStateClass.MEASUREMENT
-    _attr_icon = "mdi:alarm-light"
 
     def __init__(self, coordinator: VeeamOneCoordinator, status: str | None) -> None:
         label = status or "Active"
-        super().__init__(coordinator, f"{label.lower()}_alarms", f"{label} Alarms")
+        super().__init__(coordinator, f"{label.lower()}_alarms", f"{label.lower()}_alarms")
         self.status = status
 
     @property
@@ -84,10 +88,11 @@ class LicenseSensor(VeeamOneEntity, SensorEntity):
     """A field of the installed Veeam ONE license."""
 
     _attr_entity_category = EntityCategory.DIAGNOSTIC
-    _attr_icon = "mdi:license"
 
-    def __init__(self, coordinator: VeeamOneCoordinator, field: str, name: str) -> None:
-        super().__init__(coordinator, f"license_{field}", name)
+    def __init__(self, coordinator: VeeamOneCoordinator, field: str) -> None:
+        super().__init__(coordinator, f"license_{field}", f"license_{field}")
+        if field in DISABLED_LICENSE_FIELDS:
+            self._attr_entity_registry_enabled_default = False
         self.field = field
 
     @property
@@ -101,10 +106,11 @@ class LicenseDaysRemainingSensor(VeeamOneEntity, SensorEntity):
 
     _attr_device_class = SensorDeviceClass.DURATION
     _attr_native_unit_of_measurement = UnitOfTime.DAYS
-    _attr_icon = "mdi:calendar-clock"
 
-    def __init__(self, coordinator: VeeamOneCoordinator, field: str, key: str, name: str) -> None:
-        super().__init__(coordinator, key, name)
+    def __init__(
+        self, coordinator: VeeamOneCoordinator, field: str, key: str, translation_key: str
+    ) -> None:
+        super().__init__(coordinator, key, translation_key)
         self.field = field
 
     @property
@@ -135,13 +141,10 @@ class LicenseUsageSensor(VeeamOneEntity, SensorEntity):
     """Used or licensed amount of one license unit (instances, sockets, points)."""
 
     _attr_state_class = SensorStateClass.MEASUREMENT
-    _attr_icon = "mdi:counter"
 
     def __init__(self, coordinator: VeeamOneCoordinator, unit: str, field: str) -> None:
         super().__init__(
-            coordinator,
-            f"license_{unit.lower()}_{field}",
-            f"License {unit} {field.capitalize()}",
+            coordinator, f"license_{unit.lower()}_{field}", f"license_unit_{field}", {"unit": unit}
         )
         self.unit = unit
         self.field = field
@@ -156,11 +159,13 @@ class LicenseUsagePercentageSensor(VeeamOneEntity, SensorEntity):
 
     _attr_native_unit_of_measurement = PERCENTAGE
     _attr_state_class = SensorStateClass.MEASUREMENT
-    _attr_icon = "mdi:percent"
 
     def __init__(self, coordinator: VeeamOneCoordinator, unit: str) -> None:
         super().__init__(
-            coordinator, f"license_{unit.lower()}_percentage", f"License {unit} Used Percentage"
+            coordinator,
+            f"license_{unit.lower()}_percentage",
+            "license_unit_used_percentage",
+            {"unit": unit},
         )
         self.unit = unit
 
@@ -177,10 +182,11 @@ class CollectionCountSensor(VeeamOneEntity, SensorEntity):
     """Number of resources Veeam ONE reports in a collection."""
 
     _attr_state_class = SensorStateClass.MEASUREMENT
-    _attr_icon = "mdi:database-outline"
 
     def __init__(self, coordinator: VeeamOneCoordinator, key: str) -> None:
-        super().__init__(coordinator, f"{key}_count", COLLECTIONS[key].label)
+        super().__init__(
+            coordinator, f"{key}_count", "collection_count", {"collection": COLLECTIONS[key].label}
+        )
         self.key = key
 
     @property
@@ -193,10 +199,14 @@ class CollectionHealthSensor(VeeamOneEntity, SensorEntity):
 
     _attr_native_unit_of_measurement = PERCENTAGE
     _attr_state_class = SensorStateClass.MEASUREMENT
-    _attr_icon = "mdi:heart-pulse"
 
     def __init__(self, coordinator: VeeamOneCoordinator, key: str) -> None:
-        super().__init__(coordinator, f"{key}_health", f"{COLLECTIONS[key].label} Health")
+        super().__init__(
+            coordinator,
+            f"{key}_health",
+            "collection_health",
+            {"collection": COLLECTIONS[key].label},
+        )
         self.key = key
 
     @property
@@ -212,10 +222,8 @@ class CollectionHealthSensor(VeeamOneEntity, SensorEntity):
 class ResourceStatusSensor(ResourceEntity, SensorEntity):
     """Reported status of a resource; its remaining fields are attributes."""
 
-    _attr_icon = "mdi:information-outline"
-
     def __init__(self, coordinator: VeeamOneCoordinator, key: str, object_id: str) -> None:
-        super().__init__(coordinator, key, object_id, "status", "Status")
+        super().__init__(coordinator, key, object_id, "status", "status")
 
     @property
     def native_value(self) -> str | None:
@@ -228,38 +236,34 @@ class ResourceStatusSensor(ResourceEntity, SensorEntity):
         return {key: value for key, value in self.item().items() if key not in promoted}
 
 
-# API field → (name, unit, device class, entity category)
-FIELDS: dict[str, tuple[str, str | None, SensorDeviceClass | None, EntityCategory | None]] = {
-    "lastRun": ("Last Run", None, SensorDeviceClass.TIMESTAMP, None),
-    "lastRunDurationSec": (
-        "Last Run Duration",
-        UnitOfTime.SECONDS,
-        SensorDeviceClass.DURATION,
-        None,
+@dataclass(frozen=True, slots=True)
+class Field:
+    """A resource field promoted to its own sensor."""
+
+    translation_key: str
+    unit: str | None = None
+    device_class: SensorDeviceClass | None = None
+    category: EntityCategory | None = None
+    enabled_default: bool = True
+
+
+DURATION = SensorDeviceClass.DURATION
+DATA_SIZE = SensorDeviceClass.DATA_SIZE
+DIAGNOSTIC = EntityCategory.DIAGNOSTIC
+
+FIELDS: dict[str, Field] = {
+    "lastRun": Field("last_run", device_class=SensorDeviceClass.TIMESTAMP),
+    "lastRunDurationSec": Field("last_run_duration", UnitOfTime.SECONDS, DURATION),
+    "avgDurationSec": Field(
+        "average_run_duration", UnitOfTime.SECONDS, DURATION, DIAGNOSTIC, enabled_default=False
     ),
-    "avgDurationSec": (
-        "Average Run Duration",
-        UnitOfTime.SECONDS,
-        SensorDeviceClass.DURATION,
-        EntityCategory.DIAGNOSTIC,
-    ),
-    "lastTransferredDataBytes": (
-        "Last Transferred Data",
-        UnitOfInformation.BYTES,
-        SensorDeviceClass.DATA_SIZE,
-        None,
-    ),
-    "processedItems": ("Processed Items", None, None, EntityCategory.DIAGNOSTIC),
-    "capacityBytes": ("Capacity", UnitOfInformation.BYTES, SensorDeviceClass.DATA_SIZE, None),
-    "freeSpaceBytes": ("Free Space", UnitOfInformation.BYTES, SensorDeviceClass.DATA_SIZE, None),
-    "usedSpaceBytes": ("Used Space", UnitOfInformation.BYTES, SensorDeviceClass.DATA_SIZE, None),
-    "runningTasks": ("Running Tasks", None, None, EntityCategory.DIAGNOSTIC),
-    "outOfSpaceInDays": (
-        "Days Until Out of Space",
-        UnitOfTime.DAYS,
-        SensorDeviceClass.DURATION,
-        None,
-    ),
+    "lastTransferredDataBytes": Field("last_transferred_data", UnitOfInformation.BYTES, DATA_SIZE),
+    "processedItems": Field("processed_items", category=DIAGNOSTIC, enabled_default=False),
+    "capacityBytes": Field("capacity", UnitOfInformation.BYTES, DATA_SIZE),
+    "freeSpaceBytes": Field("free_space", UnitOfInformation.BYTES, DATA_SIZE),
+    "usedSpaceBytes": Field("used_space", UnitOfInformation.BYTES, DATA_SIZE),
+    "runningTasks": Field("running_tasks", category=DIAGNOSTIC, enabled_default=False),
+    "outOfSpaceInDays": Field("days_until_out_of_space", UnitOfTime.DAYS, DURATION),
 }
 
 
@@ -269,15 +273,16 @@ class ResourceFieldSensor(ResourceEntity, SensorEntity):
     def __init__(
         self, coordinator: VeeamOneCoordinator, key: str, object_id: str, field: str
     ) -> None:
-        name, unit, device_class, category = FIELDS[field]
-        super().__init__(coordinator, key, object_id, field, name)
+        spec = FIELDS[field]
+        super().__init__(coordinator, key, object_id, field, spec.translation_key)
         self.field = field
-        self._attr_native_unit_of_measurement = unit
-        self._attr_device_class = device_class
-        self._attr_entity_category = category
-        if device_class != SensorDeviceClass.TIMESTAMP:
+        self._attr_native_unit_of_measurement = spec.unit
+        self._attr_device_class = spec.device_class
+        self._attr_entity_category = spec.category
+        self._attr_entity_registry_enabled_default = spec.enabled_default
+        if spec.device_class != SensorDeviceClass.TIMESTAMP:
             self._attr_state_class = SensorStateClass.MEASUREMENT
-        if device_class == SensorDeviceClass.DATA_SIZE:
+        if spec.device_class == SensorDeviceClass.DATA_SIZE:
             self._attr_suggested_unit_of_measurement = UnitOfInformation.GIBIBYTES
 
     @property
@@ -293,10 +298,9 @@ class ResourceFreePercentSensor(ResourceEntity, SensorEntity):
 
     _attr_native_unit_of_measurement = PERCENTAGE
     _attr_state_class = SensorStateClass.MEASUREMENT
-    _attr_icon = "mdi:harddisk"
 
     def __init__(self, coordinator: VeeamOneCoordinator, key: str, object_id: str) -> None:
-        super().__init__(coordinator, key, object_id, "free_percent", "Free Space Percentage")
+        super().__init__(coordinator, key, object_id, "free_percent", "free_space_percentage")
 
     @property
     def native_value(self) -> float | None:
@@ -314,19 +318,18 @@ def _entities(coordinator: VeeamOneCoordinator) -> list[VeeamOneEntity]:
         VersionSensor(coordinator),
         AlarmCountSensor(coordinator, None),
         *(AlarmCountSensor(coordinator, status) for status in ("Error", "Warning")),
-        LicenseSensor(coordinator, "type", "License Type"),
-        LicenseSensor(coordinator, "package", "License Package"),
-        LicenseSensor(coordinator, "company", "License Company"),
-        LicenseSensor(coordinator, "instances", "Licensed Instances"),
-        LicenseSensor(coordinator, "sockets", "Licensed Sockets"),
+        *(
+            LicenseSensor(coordinator, field)
+            for field in ("type", "package", "company", "instances", "sockets")
+        ),
         LicenseDaysRemainingSensor(
-            coordinator, "expirationDate", "license_expiration_days", "License Days Remaining"
+            coordinator, "expirationDate", "license_expiration_days", "license_days_remaining"
         ),
         LicenseDaysRemainingSensor(
             coordinator,
             "supportExpirationDate",
             "license_support_expiration_days",
-            "License Support Days Remaining",
+            "license_support_days_remaining",
         ),
     ]
     for unit in coordinator.data.get("license_usage", {}).get("units") or []:

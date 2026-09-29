@@ -1,0 +1,75 @@
+rules:
+  # Bronze
+  action-setup: done
+  appropriate-polling: done
+  brands: done
+  common-modules: done
+  config-flow-test-coverage: done
+  config-flow: done
+  dependency-transparency: done
+  docs-actions: done
+  docs-high-level-description: done
+  docs-installation-instructions: done
+  docs-removal-instructions: done
+  entity-event-setup:
+    status: exempt
+    comment: Entities only listen to the coordinator; nothing subscribes to events.
+  entity-unique-id: done
+  has-entity-name: done
+  runtime-data: done
+  test-before-configure: done
+  test-before-setup: done
+  unique-config-entry: done
+
+  # Silver
+  action-exceptions: done
+  config-entry-unloading: done
+  docs-configuration-parameters: done
+  docs-installation-parameters: done
+  entity-unavailable: done
+  integration-owner: done
+  log-when-unavailable: done
+  parallel-updates: done
+  reauthentication-flow: done
+  test-coverage: done
+
+  # Gold
+  devices: done
+  diagnostics: done
+  discovery-update-info:
+    status: exempt
+    comment: Veeam ONE does not announce itself over zeroconf, SSDP or DHCP.
+  discovery:
+    status: exempt
+    comment: Veeam ONE does not announce itself over zeroconf, SSDP or DHCP.
+  docs-data-update: done
+  docs-examples: done
+  docs-known-limitations: done
+  docs-supported-devices: done
+  docs-supported-functions: done
+  docs-troubleshooting: done
+  docs-use-cases: done
+  dynamic-devices: done
+  entity-category: done
+  entity-device-class: done
+  entity-disabled-by-default: done
+  entity-translations: done
+  exception-translations: done
+  icon-translations: done
+  reconfiguration-flow: done
+  repair-issues: done
+  stale-devices: done
+
+  # Platinum
+  async-dependency: done
+  inject-websession:
+    status: todo
+    comment: >
+      veeam-one's VeeamClient builds its own httpx client per token, binding the base URL
+      and bearer token into it, so Home Assistant's shared client can't be passed in yet.
+      It does use Home Assistant's shared SSL context, and API detection uses the shared
+      httpx client. Needs a veeam-one change to accept a client and set the auth header
+      per request.
+  strict-typing:
+    status: todo
+    comment: Checked with ty in CI, not yet with mypy --strict.

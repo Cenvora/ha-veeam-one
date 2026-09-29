@@ -324,7 +324,9 @@ class VeeamOneCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     config_entry: ConfigEntry
 
-    def __init__(self, hass: HomeAssistant, entry: ConfigEntry, client: VeeamClient) -> None:
+    def __init__(
+        self, hass: HomeAssistant, entry: ConfigEntry, client: VeeamClient, api_version: str
+    ) -> None:
         super().__init__(
             hass,
             _LOGGER,
@@ -334,6 +336,9 @@ class VeeamOneCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
         self.entry_id = entry.entry_id
         self.client = client
+        self.api_version = api_version
+        # Why each endpoint failed on the latest update, for diagnostics
+        self.errors: dict[str, str] = {}
         # Collections fetched successfully in the latest update; only these are pruned.
         self.fetched: set[str] = set()
         # Unique IDs of entities currently added, so listeners only add new ones.
@@ -372,6 +377,7 @@ class VeeamOneCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             raise
         except Exception as err:  # noqa: BLE001 - one endpoint must not fail the update
             _LOGGER.debug("Veeam ONE %s request failed: %s", name, err)
+            self.errors[name] = repr(err)
             return (self.data or {}).get(name, default)
 
     async def _collection(self, key: str, collection: Collection) -> tuple[list[dict], int] | None:
@@ -381,10 +387,12 @@ class VeeamOneCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             raise
         except Exception as err:  # noqa: BLE001 - an unlicensed or absent platform is normal
             _LOGGER.debug("Veeam ONE collection %s failed: %s", key, err)
+            self.errors[key] = repr(err)
             return None
 
     async def _async_update_data(self) -> dict[str, Any]:
         previous = self.data or {}
+        self.errors = {}
         try:
             async with asyncio.timeout(UPDATE_TIMEOUT):
                 service, license_info, license_usage, alarms, results = await asyncio.gather(
@@ -397,9 +405,15 @@ class VeeamOneCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     ),
                 )
         except VeeamAuthenticationError as err:
-            raise ConfigEntryAuthFailed("Veeam ONE rejected the credentials") from err
+            raise ConfigEntryAuthFailed(
+                translation_domain=DOMAIN, translation_key="authentication_failed"
+            ) from err
         except Exception as err:
-            raise UpdateFailed(f"Error communicating with Veeam ONE: {err}") from err
+            raise UpdateFailed(
+                translation_domain=DOMAIN,
+                translation_key="update_failed",
+                translation_placeholders={"error": str(err) or type(err).__name__},
+            ) from err
 
         totals: dict[str, int] = dict(previous.get("totals", {}))
         resources: dict[str, dict[str, dict[str, Any]]] = dict(previous.get("resources", {}))

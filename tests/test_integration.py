@@ -11,6 +11,7 @@ from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import (
     MockConfigEntry,
@@ -110,10 +111,15 @@ def fake():
     client = MagicMock()
     client.connect = AsyncMock()
     client.close = AsyncMock()
+    client.package = "veeam_one.v2_3"
     with (
         patch("custom_components.veeam_one.coordinator.fetch", fake),
         patch("custom_components.veeam_one.services.fetch", fake),
         patch("custom_components.veeam_one.create_client", return_value=client),
+        patch(
+            "custom_components.veeam_one.api_version.detect_api_version",
+            AsyncMock(return_value="2.3"),
+        ),
     ):
         yield fake
 
@@ -242,3 +248,124 @@ async def test_migration_clears_old_registry_entries(hass: HomeAssistant, fake) 
     assert entry.minor_version == 2
     assert dr.async_get(hass).async_get(old_device.id) is None
     assert not hass.states.async_entity_ids("button")
+
+
+async def test_diagnostics_redact_secrets(hass: HomeAssistant, fake) -> None:
+    from custom_components.veeam_one.diagnostics import async_get_config_entry_diagnostics
+
+    fake.responses[LICENSE_INFO]["company"] = "Secret Corp"
+    entry = await _setup(hass)
+    diagnostics = await async_get_config_entry_diagnostics(hass, entry)
+    assert diagnostics["entry"]["data"]["password"] == "**REDACTED**"
+    assert diagnostics["entry"]["data"]["host"] == "**REDACTED**"
+    assert diagnostics["license"]["company"] == "**REDACTED**"
+    assert diagnostics["entry"]["resolved_api_version"] == "2.3"
+    assert diagnostics["alarms_by_status"] == {"Error": 1, "Warning": 1, "Resolved": 1}
+    assert diagnostics["collections"]["m365_repositories"] == {
+        "total": 3,
+        "devices": 3,
+        "fetched": True,
+    }
+    assert "vsphere_vms" in diagnostics["coordinator"]["errors"]
+
+
+async def test_expired_license_raises_a_repair_issue(hass: HomeAssistant, fake) -> None:
+    entry = await _setup(hass)
+    issue = ir.async_get(hass).async_get_issue(DOMAIN, f"license_expiration_{entry.entry_id}")
+    assert issue is not None
+    assert issue.translation_key == "license_expired"
+
+    # Renewed: the issue clears on the next poll
+    fake.responses[LICENSE_INFO]["expirationDate"] = "2099-01-01T00:00:00Z"
+    await _poll(hass)
+    assert (
+        ir.async_get(hass).async_get_issue(DOMAIN, f"license_expiration_{entry.entry_id}") is None
+    )
+
+
+async def test_expiring_license_warns(hass: HomeAssistant, fake) -> None:
+    soon = (dt_util.utcnow() + timedelta(days=10)).isoformat()
+    fake.responses[LICENSE_INFO]["expirationDate"] = soon
+    entry = await _setup(hass)
+    issue = ir.async_get(hass).async_get_issue(DOMAIN, f"license_expiration_{entry.entry_id}")
+    assert issue.translation_key == "license_expiring"
+    await hass.config_entries.async_remove(entry.entry_id)
+    assert (
+        ir.async_get(hass).async_get_issue(DOMAIN, f"license_expiration_{entry.entry_id}") is None
+    )
+
+
+async def test_rejected_credentials_start_reauth(hass: HomeAssistant, fake) -> None:
+    from veeam_one import VeeamAuthenticationError
+
+    client = MagicMock()
+    client.connect = AsyncMock(side_effect=VeeamAuthenticationError("no"))
+    client.close = AsyncMock()
+    with patch("custom_components.veeam_one.create_client", return_value=client):
+        entry = MockConfigEntry(domain=DOMAIN, data=ENTRY_DATA, minor_version=2)
+        entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+    assert entry.state is ConfigEntryState.SETUP_ERROR
+    assert [flow["context"]["source"] for flow in hass.config_entries.flow.async_progress()] == [
+        "reauth"
+    ]
+
+
+async def test_unreachable_server_retries(hass: HomeAssistant, fake) -> None:
+    client = MagicMock()
+    client.connect = AsyncMock(side_effect=OSError("refused"))
+    client.close = AsyncMock()
+    with patch("custom_components.veeam_one.create_client", return_value=client):
+        entry = MockConfigEntry(domain=DOMAIN, data=ENTRY_DATA, minor_version=2)
+        entry.add_to_hass(hass)
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+    assert entry.state is ConfigEntryState.SETUP_RETRY
+    client.close.assert_awaited()
+
+
+async def test_failed_poll_marks_entities_unavailable(hass: HomeAssistant, fake) -> None:
+    await _setup(hass)
+    fake.failing.add(SERVICE_INFO)
+    await _poll(hass)
+    assert _state(hass, "sensor.veeam_one_active_alarms").state == "unavailable"
+    assert _state(hass, "binary_sensor.veeam_one_connected").state == "off"
+
+
+async def test_unload_closes_the_client(hass: HomeAssistant, fake) -> None:
+    entry = await _setup(hass)
+    client = entry.runtime_data.client
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    assert entry.state is ConfigEntryState.NOT_LOADED
+    client.close.assert_awaited()
+
+
+async def test_only_vanished_devices_can_be_deleted(hass: HomeAssistant, fake) -> None:
+    from custom_components.veeam_one import async_remove_config_entry_device
+
+    entry = await _setup(hass)
+    registry = dr.async_get(hass)
+    current = next(
+        device
+        for device in dr.async_entries_for_config_entry(registry, entry.entry_id)
+        if device.name == "Veeam ONE Repository 0"
+    )
+    stale = registry.async_get_or_create(
+        config_entry_id=entry.entry_id, identifiers={(DOMAIN, f"{entry.entry_id}:jobs:gone")}
+    )
+    assert not await async_remove_config_entry_device(hass, entry, current)
+    assert await async_remove_config_entry_device(hass, entry, stale)
+
+
+async def test_resolve_alarm_errors(hass: HomeAssistant, fake) -> None:
+    from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
+
+    entry = await _setup(hass)
+    fake.failing.add(RESOLVE_ALARMS)
+    with pytest.raises(HomeAssistantError, match="HTTP 404"):
+        await hass.services.async_call(DOMAIN, "resolve_alarm", {"alarm_ids": [1]}, blocking=True)
+
+    await hass.config_entries.async_unload(entry.entry_id)
+    with pytest.raises(ServiceValidationError, match="No loaded Veeam ONE server"):
+        await hass.services.async_call(DOMAIN, "resolve_alarm", {"alarm_ids": [1]}, blocking=True)
