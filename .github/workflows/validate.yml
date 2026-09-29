@@ -1,0 +1,112 @@
+name: Validate
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  validate-python:
+    name: Python Validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install ruff ty
+          pip install -r requirements_test.txt
+
+      - name: Format check with Ruff
+        run: ruff format --check custom_components/
+
+      - name: Lint with Ruff
+        run: ruff check custom_components/
+
+      - name: Type check with ty
+        run: ty check custom_components/
+
+  tests:
+    name: Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements_test.txt
+
+      - name: Run tests
+        run: |
+          pytest
+
+  validate-hacs:
+    name: HACS Validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: HACS Action
+        uses: hacs/action@main
+        with:
+          category: integration
+
+  validate-hassfest:
+    name: Hassfest Validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Hassfest
+        uses: home-assistant/actions/hassfest@master
+
+  validate-json:
+    name: JSON Validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Validate JSON files
+        run: |
+          for file in $(find . -name "*.json" -not -path "./.git/*"); do
+            echo "Validating $file"
+            python -m json.tool "$file" > /dev/null || exit 1
+          done
+
+      - name: Validate manifest.json schema
+        run: |
+          python -c "
+          import json
+          import sys
+          
+          manifest_path = 'custom_components/veeam_one/manifest.json'
+          with open(manifest_path) as f:
+              manifest = json.load(f)
+          
+          required_keys = ['domain', 'name', 'version', 'documentation', 'requirements', 'codeowners', 'iot_class']
+          missing_keys = [key for key in required_keys if key not in manifest]
+          
+          if missing_keys:
+              print(f'Missing required keys in manifest.json: {missing_keys}')
+              sys.exit(1)
+          
+          print('✓ manifest.json is valid')
+          "
