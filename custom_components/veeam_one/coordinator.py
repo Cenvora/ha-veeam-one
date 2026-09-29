@@ -233,9 +233,10 @@ class VeeamOneCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.client = client
         super().__init__(
             hass,
-            self._async_update_data,
+            _LOGGER,
             name=DOMAIN,
             update_interval=timedelta(seconds=UPDATE_INTERVAL),
+            update_method=self._async_update_data,
         )
 
     async def _collection(self, key: str, operation: str) -> list[dict[str, Any]]:
