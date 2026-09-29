@@ -5,7 +5,8 @@
   "config_flow": true,
   "documentation": "https://github.com/Cenvora/ha-veeam-one",
   "iot_class": "local_polling",
+  "loggers": ["veeam_one"],
   "issue_tracker": "https://github.com/Cenvora/ha-veeam-one/issues",
-  "requirements": ["veeam-one>=0.1.0,<1.0.0"],
+  "requirements": ["veeam-one>=0.2.0,<1.0.0"],
   "version": "0.1.0"
 }

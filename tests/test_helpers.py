@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 from veeam_one import VeeamAuthenticationError
+from veeam_one.versions import VERSION_TO_PACKAGE
 
 from custom_components.veeam_one.coordinator import (
     COLLECTIONS,
@@ -15,7 +16,7 @@ from custom_components.veeam_one.coordinator import (
     resource_name,
 )
 from custom_components.veeam_one.entity import active_alarms, parse_timestamp
-from custom_components.veeam_one.sdk import PACKAGE, VeeamOneApiError, fetch, prepare_sdk
+from custom_components.veeam_one.sdk import API_VERSIONS, VeeamOneApiError, fetch, prepare_sdk
 from custom_components.veeam_one.sensor import _number
 
 
@@ -32,9 +33,12 @@ def test_as_dict():
 def test_every_operation_exists_in_the_sdk():
     import importlib
 
-    prepare_sdk(OPERATIONS)
-    for operation in OPERATIONS:
-        assert hasattr(importlib.import_module(f"{PACKAGE}.api.{operation}"), "asyncio_detailed")
+    for version in API_VERSIONS:
+        prepare_sdk(version, OPERATIONS)
+        package = VERSION_TO_PACKAGE[version]
+        for operation in OPERATIONS:
+            module = importlib.import_module(f"{package}.api.{operation}")
+            assert hasattr(module, "asyncio_detailed")
 
 
 def test_device_collections_name_their_own_id_and_status():
@@ -90,7 +94,7 @@ def test_parse_timestamp_assumes_utc():
 
 def _client(status: int, parsed=None):
     response = SimpleNamespace(status_code=HTTPStatus(status), parsed=parsed)
-    return SimpleNamespace(call=AsyncMock(return_value=response))
+    return SimpleNamespace(call=AsyncMock(return_value=response), package="veeam_one.v2_3")
 
 
 async def test_fetch_raises_on_error_status():

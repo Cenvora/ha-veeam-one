@@ -69,9 +69,17 @@ class VeeamOneEntity(CoordinatorEntity[VeeamOneCoordinator], Entity):
 
     _attr_has_entity_name = True
 
-    def __init__(self, coordinator: VeeamOneCoordinator, key: str, name: str) -> None:
+    def __init__(
+        self,
+        coordinator: VeeamOneCoordinator,
+        key: str,
+        translation_key: str,
+        placeholders: dict[str, str] | None = None,
+    ) -> None:
         super().__init__(coordinator)
-        self._attr_name = name
+        self._attr_translation_key = translation_key
+        if placeholders:
+            self._attr_translation_placeholders = placeholders
         self._attr_unique_id = f"{coordinator.entry_id}_{key}"
 
     @property
@@ -94,9 +102,14 @@ class ResourceEntity(VeeamOneEntity):
     """An entity on a resource's own device."""
 
     def __init__(
-        self, coordinator: VeeamOneCoordinator, key: str, object_id: str, suffix: str, name: str
+        self,
+        coordinator: VeeamOneCoordinator,
+        key: str,
+        object_id: str,
+        suffix: str,
+        translation_key: str,
     ) -> None:
-        super().__init__(coordinator, f"{key}_{object_id}_{suffix}", name)
+        super().__init__(coordinator, f"{key}_{object_id}_{suffix}", translation_key)
         self.collection_key = key
         self.collection = COLLECTIONS[key]
         self.object_id = object_id

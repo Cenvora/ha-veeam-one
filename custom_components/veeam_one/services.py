@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import importlib
-
 import voluptuous as vol
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant, ServiceCall
@@ -19,7 +17,7 @@ from .const import (
     SERVICE_RESOLVE_ALARM,
 )
 from .coordinator import RESOLVE_ALARMS, VeeamOneCoordinator
-from .sdk import PACKAGE, fetch
+from .sdk import fetch, model
 
 RESOLVE_ALARM_SCHEMA = vol.Schema(
     {
@@ -39,9 +37,8 @@ def _coordinator(hass: HomeAssistant, entry_id: str | None) -> VeeamOneCoordinat
     ]
     if len(entries) != 1:
         raise ServiceValidationError(
-            "Pick the Veeam ONE server with config_entry_id"
-            if entries
-            else "No loaded Veeam ONE server matches"
+            translation_domain=DOMAIN,
+            translation_key="multiple_entries" if entries else "no_loaded_entry",
         )
     return entries[0].runtime_data
 
@@ -51,9 +48,11 @@ def async_setup_services(hass: HomeAssistant) -> None:
 
     async def resolve_alarm(call: ServiceCall) -> None:
         coordinator = _coordinator(hass, call.data.get(ATTR_CONFIG_ENTRY_ID))
-        request = importlib.import_module(
-            f"{PACKAGE}.models.resolve_multiple_triggered_alarms_request"
-        ).ResolveMultipleTriggeredAlarmsRequest
+        request = model(
+            coordinator.client,
+            "resolve_multiple_triggered_alarms_request",
+            "ResolveMultipleTriggeredAlarmsRequest",
+        )
         try:
             await fetch(
                 coordinator.client,
@@ -64,7 +63,11 @@ def async_setup_services(hass: HomeAssistant) -> None:
                 ),
             )
         except Exception as err:
-            raise HomeAssistantError(f"Unable to resolve Veeam ONE alarms: {err}") from err
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="resolve_failed",
+                translation_placeholders={"error": str(err)},
+            ) from err
         await coordinator.async_request_refresh()
 
     hass.services.async_register(
