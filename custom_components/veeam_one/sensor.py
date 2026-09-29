@@ -218,7 +218,19 @@ class LicenseUsageSensor(CoordinatorEntity[VeeamOneCoordinator], SensorEntity):
 async def async_setup_entry(hass: Any, entry: Any, async_add_entities: Any) -> None:
     """Set up Veeam ONE sensors."""
     coordinator: VeeamOneCoordinator = entry.runtime_data
-    entities: list[SensorEntity] = [OverviewSensor(coordinator)]
+    entities: list[SensorEntity] = [
+        OverviewSensor(coordinator),
+        LicenseSensor(coordinator, "type", "License Type"),
+        LicenseSensor(coordinator, "package", "License Package"),
+        LicenseSensor(coordinator, "instances", "Licensed Instances"),
+        LicenseSensor(coordinator, "sockets", "Licensed Sockets"),
+        LicenseExpirationSensor(coordinator),
+    ]
+
+    for unit in coordinator.data.get("license_usage", {}).get("units", []) or []:
+        if isinstance(unit, dict):
+            for field in ("used", "available", "licensed"):
+                entities.append(LicenseUsageSensor(coordinator, unit, field))
 
     for key in COLLECTIONS:
         entities.append(CollectionSensor(coordinator, key))
