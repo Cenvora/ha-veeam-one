@@ -14,10 +14,10 @@ def resource_id(item: dict[str, Any]) -> str | None:
     """Return the stable identifier used by a Veeam ONE resource."""
     for key in (
         "id", "uid", "resourceId", "vmBackupJobUid", "vmReplicationJobUid",
-        "vmCopyJobUid", "repositoryId", "hostId", "clusterId",
-        "virtualMachineId", "vCenterId", "organizationId", "serverId",
-        "tenantId", "gatewayId", "proxyId", "siteId", "teamId",
-        "userId", "groupId",
+        "vmCopyJobUid", "repositoryId", "backupJobId", "copyJobId", "hostId", "clusterId",
+        "virtualMachineId", "vmId", "vCenterId", "datastoreId", "datastoreClusterId", "resourcePoolId", "vAppId", "organizationId", "orgVdcId", "providerVdcId", "serverId",
+        "tenantId", "gatewayId", "gatewayPoolId", "proxyId", "objectStorageRepositoryId", "siteId", "teamId",
+        "userId", "groupId", "fileServerId", "fileShareId", "physicalDiskId", "databaseId",
     ):
         value = item.get(key)
         if value is not None:
