@@ -12,7 +12,13 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .const import DOMAIN
 from .coordinator import COLLECTIONS, VeeamOneCoordinator
 from .entity import VeeamOneEntity, resource_id, resource_name
-from .monitoring import AlarmSeveritySensor, CollectionHealthSensor, LicenseUsagePercentageSensor, ServiceSensor
+from .monitoring import (
+    AlarmSeveritySensor,
+    CollectionHealthSensor,
+    LicenseUsagePercentageSensor,
+    ServiceSensor,
+    _healthy,
+)
 
 
 def _status(item: dict[str, Any]) -> str | None:
@@ -100,20 +106,10 @@ class FailedCollectionSensor(CollectionSensor):
     @property
     def native_value(self) -> int:
         resources = self.coordinator.data.get("collections", {}).get(self.key, [])
-        healthy = (
-            "success",
-            "successful",
-            "normal",
-            "connected",
-            "online",
-            "available",
-            "ok",
-            "ready",
-        )
         return sum(
             1
             for item in resources
-            if (state := _status(item)) and not any(x in state.lower() for x in healthy)
+            if (state := _status(item)) and not _healthy(state)
         )
 
 
