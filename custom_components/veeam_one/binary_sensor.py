@@ -1,4 +1,5 @@
 """Veeam ONE binary sensors."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -21,9 +22,20 @@ def _status(item: dict[str, Any]) -> str:
 def _healthy(status: str) -> bool:
     if not status:
         return True
-    return any(value in status for value in (
-        "success", "successful", "normal", "connected", "online", "available", "ok", "ready", "running"
-    ))
+    return any(
+        value in status
+        for value in (
+            "success",
+            "successful",
+            "normal",
+            "connected",
+            "online",
+            "available",
+            "ok",
+            "ready",
+            "running",
+        )
+    )
 
 
 class Connected(CoordinatorEntity[VeeamOneCoordinator], BinarySensorEntity):
@@ -43,8 +55,12 @@ class Connected(CoordinatorEntity[VeeamOneCoordinator], BinarySensorEntity):
 
     @property
     def device_info(self) -> dict[str, Any]:
-        return {"identifiers": {(DOMAIN, self.coordinator.entry_id)}, "name": "Veeam ONE",
-                "manufacturer": "Veeam", "model": "Veeam ONE"}
+        return {
+            "identifiers": {(DOMAIN, self.coordinator.entry_id)},
+            "name": "Veeam ONE",
+            "manufacturer": "Veeam",
+            "model": "Veeam ONE",
+        }
 
 
 class ResourceProblemSensor(VeeamOneEntity, BinarySensorEntity):
@@ -53,7 +69,9 @@ class ResourceProblemSensor(VeeamOneEntity, BinarySensorEntity):
     _attr_device_class = BinarySensorDeviceClass.PROBLEM
     _attr_icon = "mdi:shield-check"
 
-    def __init__(self, coordinator: VeeamOneCoordinator, kind: str, object_id: str, name: str) -> None:
+    def __init__(
+        self, coordinator: VeeamOneCoordinator, kind: str, object_id: str, name: str
+    ) -> None:
         super().__init__(coordinator, kind, object_id, name)
         self._attr_name = "Problem"
         self._attr_unique_id = f"{coordinator.entry_id}_{kind}_{object_id}_problem"
@@ -73,7 +91,9 @@ def _resource_entities(coordinator: VeeamOneCoordinator) -> list[ResourceProblem
             object_id = resource_id(item)
             if object_id:
                 entities.append(
-                    ResourceProblemSensor(coordinator, kind, object_id, resource_name(item, object_id))
+                    ResourceProblemSensor(
+                        coordinator, kind, object_id, resource_name(item, object_id)
+                    )
                 )
     return entities
 

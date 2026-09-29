@@ -1,4 +1,5 @@
 """Shared Veeam ONE entity helpers."""
+
 from __future__ import annotations
 
 import re
@@ -13,11 +14,41 @@ from .coordinator import VeeamOneCoordinator
 def resource_id(item: dict[str, Any]) -> str | None:
     """Return the stable identifier used by a Veeam ONE resource."""
     for key in (
-        "id", "uid", "resourceId", "vmBackupJobUid", "vmReplicationJobUid",
-        "vmCopyJobUid", "repositoryId", "backupJobId", "copyJobId", "hostId", "clusterId",
-        "virtualMachineId", "vmId", "vCenterId", "datastoreId", "datastoreClusterId", "resourcePoolId", "vAppId", "organizationId", "orgVdcId", "providerVdcId", "serverId",
-        "tenantId", "gatewayId", "gatewayPoolId", "proxyId", "objectStorageRepositoryId", "siteId", "teamId",
-        "userId", "groupId", "fileServerId", "fileShareId", "physicalDiskId", "databaseId",
+        "id",
+        "uid",
+        "resourceId",
+        "vmBackupJobUid",
+        "vmReplicationJobUid",
+        "vmCopyJobUid",
+        "repositoryId",
+        "backupJobId",
+        "copyJobId",
+        "hostId",
+        "clusterId",
+        "virtualMachineId",
+        "vmId",
+        "vCenterId",
+        "datastoreId",
+        "datastoreClusterId",
+        "resourcePoolId",
+        "vAppId",
+        "organizationId",
+        "orgVdcId",
+        "providerVdcId",
+        "serverId",
+        "tenantId",
+        "gatewayId",
+        "gatewayPoolId",
+        "proxyId",
+        "objectStorageRepositoryId",
+        "siteId",
+        "teamId",
+        "userId",
+        "groupId",
+        "fileServerId",
+        "fileShareId",
+        "physicalDiskId",
+        "databaseId",
     ):
         value = item.get(key)
         if value is not None:
@@ -41,7 +72,9 @@ def device_name(kind: str, name: str) -> str:
     return f"Veeam ONE {kind} {name}"
 
 
-def device_info(coordinator: VeeamOneCoordinator, kind: str, object_id: str, name: str) -> dict[str, Any]:
+def device_info(
+    coordinator: VeeamOneCoordinator, kind: str, object_id: str, name: str
+) -> dict[str, Any]:
     """Return Home Assistant device information for a resource."""
     return {
         "identifiers": {(DOMAIN, coordinator.entry_id, kind, object_id)},
@@ -56,7 +89,9 @@ class VeeamOneEntity(CoordinatorEntity[VeeamOneCoordinator]):
 
     _attr_has_entity_name = True
 
-    def __init__(self, coordinator: VeeamOneCoordinator, kind: str, object_id: str, name: str) -> None:
+    def __init__(
+        self, coordinator: VeeamOneCoordinator, kind: str, object_id: str, name: str
+    ) -> None:
         super().__init__(coordinator)
         self.kind = kind
         self.object_id = object_id

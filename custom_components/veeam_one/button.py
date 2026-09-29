@@ -1,4 +1,5 @@
 """Veeam ONE buttons."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -6,9 +7,11 @@ from typing import Any
 from homeassistant.components.button import ButtonEntity
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity import EntityCategory
-from veeam_one.v2_3.models.resolve_multiple_triggered_alarms_request import ResolveMultipleTriggeredAlarmsRequest
 
-from .const import DOMAIN
+from veeam_one.v2_3.models.resolve_multiple_triggered_alarms_request import (
+    ResolveMultipleTriggeredAlarmsRequest,
+)
+
 from .coordinator import VeeamOneCoordinator
 from .entity import VeeamOneEntity
 

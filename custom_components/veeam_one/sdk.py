@@ -1,7 +1,11 @@
 """Veeam ONE SDK helpers."""
+
 from __future__ import annotations
+
 from typing import Any
+
 from veeam_one import VeeamClient
+
 
 def create_client(data: dict[str, Any]) -> VeeamClient:
     """Create the Veeam ONE smart client."""
