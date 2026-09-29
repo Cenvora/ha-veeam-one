@@ -228,6 +228,21 @@ class LicenseSensor(CoordinatorEntity[VeeamOneCoordinator], SensorEntity):
                 "manufacturer": "Veeam", "model": "Veeam ONE"}
 
 
+class LicenseSupportExpirationSensor(LicenseSensor):
+    """Days remaining until support expires."""
+
+    def __init__(self, coordinator: VeeamOneCoordinator) -> None:
+        super().__init__(coordinator, "support_expiration_days", "License Support Days Remaining")
+        self._attr_native_unit_of_measurement = "d"
+
+    @property
+    def native_value(self) -> int | None:
+        expiration = _timestamp(self.coordinator.data.get("license", {}).get("supportExpirationDate"))
+        if expiration is None:
+            return None
+        return max(0, (expiration - datetime.now(timezone.utc)).days)
+
+
 class LicenseExpirationSensor(LicenseSensor):
     """Days remaining until license expiration."""
 
