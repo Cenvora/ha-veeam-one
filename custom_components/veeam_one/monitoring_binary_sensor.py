@@ -6,7 +6,7 @@ from homeassistant.components.binary_sensor import BinarySensorDeviceClass, Bina
 from homeassistant.const import EntityCategory
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .const import DOMAIN
-from .coordinator import VeeamOneCoordinator
+from .coordinator import COLLECTIONS, VeeamOneCoordinator
 
 class AggregateBinary(CoordinatorEntity[VeeamOneCoordinator], BinarySensorEntity):
     _attr_has_entity_name = True
@@ -61,7 +61,7 @@ class CollectionProblemSensor(AggregateBinary):
     def __init__(self, coordinator: VeeamOneCoordinator, key: str) -> None:
         super().__init__(coordinator)
         self.key = key
-        self._attr_name = f"{key.replace(chr(95), chr(32)).title()} Problem"
+        self._attr_name = f"{COLLECTIONS[key][0]} Problem"
         self._attr_unique_id = f"{coordinator.entry_id}_{key}_problem"
     @property
     def is_on(self) -> bool | None:
