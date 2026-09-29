@@ -10,7 +10,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .const import DOMAIN
 from .coordinator import COLLECTIONS, VeeamOneCoordinator
 from .entity import VeeamOneEntity, resource_id, resource_name
-from .monitoring_binary_sensor import CollectionProblemSensor, LicenseExpiredSensor, LicenseSupportExpiredSensor
+from .monitoring_binary_sensor import (\n    CollectionProblemSensor,\n    LicenseExpiredSensor,\n    LicenseSupportExpiredSensor,\n)
 
 
 def _status(item: dict[str, Any]) -> str:
