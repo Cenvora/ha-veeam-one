@@ -10,41 +10,170 @@ Veeam ONE Integration for Home Assistant
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/hacs/integration)
 
-A Home Assistant custom integration for monitoring Veeam ONE: triggered alarms, licensing, and the health of the jobs, repositories and servers Veeam ONE watches. It uses the Cenvora `veeam-one` Python client and the Veeam ONE REST API.
+A Home Assistant custom integration that monitors Veeam ONE: triggered alarms, licensing, and
+the health of the jobs, repositories and servers Veeam ONE watches.
 
 This project is an independent, open source project. It is not affiliated with, endorsed by, or sponsored by Veeam Software.
 
-## Monitoring coverage
+## Features
 
-The integration reads Veeam ONE's monitoring API across:
+- 🔧 **UI Configuration Flow**: Easy setup through Home Assistant's UI
+- 🔎 **API Version Auto-Detection**: Finds the newest REST API version your server serves
+- 🚨 **Alarm Monitoring**: Triggered alarms as sensors, with an action to resolve them
+- 📊 **Job & Repository Health**: Status, problems, run times and free space for what Veeam ONE watches
+- 🪪 **License Tracking**: Days remaining, usage per license unit, and a repair issue before it expires
+- 🌐 **Broad Coverage**: Counts and health for every platform Veeam ONE monitors, from vSphere to Microsoft 365
+- 🔄 **Automatic Updates**: Polls Veeam ONE every 60 seconds
+- 🧹 **Device Cleanup**: Jobs and repositories Veeam ONE stops reporting are removed from Home Assistant
 
-- **Veeam Backup & Replication** — backup, replication and backup copy jobs; repositories; backup servers
-- **Veeam Cloud Connect** — tenants, cloud gateways and gateway pools
-- **Veeam Backup for Microsoft 365** — organizations, servers, proxies, repositories, object storage, backup/copy jobs and protected Microsoft 365 objects
-- **VMware vSphere** — vCenters, hosts, clusters, datastores, datastore clusters, resource pools, VMs and vApps
-- **VMware Cloud Director** — Cloud Director servers, organizations, organization/provider VDCs, datastores and vApps
-- **Microsoft Hyper-V** — hosts, clusters, VMs, file servers/shares, physical disks and SCVMM servers
-- **Public Cloud** — cloud VMs, databases, file shares and their protected/backup resources
-- **Veeam ONE** — service/about information, licensing and triggered alarms
+## Requirements
+
+- Home Assistant 2026.8 or newer
+- Veeam ONE with Veeam ONE Web Services (the REST API) installed
+- A Veeam ONE account that can sign in to the Veeam ONE Web Client. A read-only role is enough
+  for monitoring; resolving alarms needs a role that can resolve alarms in Veeam ONE
+
+### Supported API Versions
+
+The **API Version** option selects the REST API version used against your server. It defaults
+to **Automatic**, which probes the server on every start and uses the newest version that both
+the server and the installed [veeam-one](https://github.com/Cenvora/veeam-one) library support.
+Pick a specific version to pin it instead.
+
+| Veeam ONE Version | API Version | Notes |
+| ----------------- | ----------- | ----- |
+| 13.0.1            | `2.3`       | Default |
+
+Servers that only serve API 2.1 or 2.2 aren't supported yet.
+
+## Installation
+### HACS (Recommended)
+
+Have [HACS](https://hacs.xyz/) installed, this will allow you to update easily.
+
+* Adding ha-veeam-one to HACS can be using this button:
+
+[![image](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Cenvora&repository=ha-veeam-one&category=integration)
+
+> [!NOTE]
+> If the button above doesn't work, add `https://github.com/Cenvora/ha-veeam-one` as a custom repository of type Integration in HACS.
+
+* Click install on the `Veeam ONE` integration.
+* Restart Home Assistant.
+
+<details><summary>Manual Install</summary>
+
+* Copy the `custom_components/veeam_one` folder from the [latest release](https://github.com/Cenvora/ha-veeam-one/releases/latest) to the [`custom_components` folder](https://developers.home-assistant.io/docs/creating_integration_file_structure/#where-home-assistant-looks-for-integrations) in your config directory.
+* Restart Home Assistant.
+</details>
+
+The required `veeam-one` Python library is installed automatically by Home Assistant.
+
+## Configuration
+
+### Configuration Parameters
+
+The integration supports the following configuration options:
+
+#### Required Parameters
+- **Host**: Hostname or IP address of the Veeam ONE Web Services server
+- **Port**: REST API port (default: 1239). Veeam ONE Web Services uses 1239 unless it was
+  changed at install time. If nothing answers on the port you enter but Veeam ONE does answer
+  on 1239, the form says so
+- **Username**: A Veeam ONE account, e.g. `DOMAIN\user`
+- **Password**: Password for the specified account
+
+#### Optional Parameters
+- **Verify SSL**: Enable/disable SSL certificate verification (default: enabled)
+  - Turn off only if the server uses a certificate Home Assistant doesn't trust, such as the
+    self-signed one Veeam ONE installs
+- **API Version**: REST API version to use. Defaults to *Automatic*, which detects the newest
+  version the server serves (also changeable later via integration options)
+
+### Via UI (Recommended)
+
+1. Go to **Settings** → **Devices & Services**
+2. Click **+ Add Integration**
+3. Search for "Veeam ONE"
+4. Enter your Veeam ONE server details:
+   - **Host**: Your Veeam ONE Web Services hostname or IP address
+   - **Port**: REST API port (default: 1239)
+   - **Username**: Veeam ONE account, e.g. `DOMAIN\user`
+   - **Password**: Password for the account
+   - **Verify SSL**: Whether to verify SSL certificates (recommended: enabled)
+   - **API Version**: Leave on *Automatic* unless you want to pin a version
+5. Click **Submit**
+
+### Options
+
+**Configure** on the integration entry changes the API version (Automatic or a fixed version)
+and reloads the integration.
+
+### Reconfiguration
+
+To update the connection settings:
+
+1. Go to **Settings** → **Devices & Services**
+2. Find the **Veeam ONE** integration
+3. Click the three dots menu (⋮) and select **Reconfigure**
+4. Update the host, port, credentials or SSL setting as needed
+5. Click **Submit**
+
+### Re-authentication
+
+If credentials expire or change:
+
+1. Home Assistant will automatically prompt for re-authentication
+2. Enter the new **Username** and **Password**
+3. Click **Submit**
+
+The integration will reconnect without losing any device or entity configurations.
+
+## Data Updates
+
+The integration polls Veeam ONE every **60 seconds** to retrieve:
+- Service information and version
+- License details and usage
+- Triggered alarms
+- Every monitored collection (jobs, repositories, servers, VMs, hosts, …)
+
+**Update Behavior:**
+- **Load**: At most six requests run at a time, so a poll doesn't load the Veeam ONE database heavily
+- **Collection delay**: Veeam ONE collects from the servers it monitors on its own schedule, so
+  a change can take a few minutes to appear
+- **Failed collections**: If one collection fails to load, for example because Veeam ONE
+  doesn't monitor that platform, the rest still update and that collection keeps its last values
+- **Failed connections**: If the whole API is unreachable, every entity becomes unavailable and
+  **Connected** turns off
+- **Connection recovery**: Entities automatically become available when the connection is restored
 
 ## Entities
 
-### Veeam ONE server device
+The integration creates a device for the Veeam ONE server, plus a device for each job,
+repository and backup server it reports.
 
-- **Connected** — whether the latest poll of the REST API succeeded
-- **Version** — installed Veeam ONE version
-- **Active alarms** — triggered alarms with status Error or Warning; the `alarms` attribute lists them (ID, name, status, time, object, description), newest first, up to 50
-- **Error alarms** and **Warning alarms** — the same, split by status
+### Veeam ONE Server Device
+
+- **Connected**: whether the latest poll of the REST API succeeded
+- **Version**: installed Veeam ONE version
+- **Active alarms**: triggered alarms with status Error or Warning; the `alarms` attribute lists
+  them (ID, name, status, time, object, description), newest first, up to 50
+- **Error alarms** and **Warning alarms**: the same, split by status
 - **License type**, **package**, **company**, **Licensed instances** and **Licensed sockets**
-- **License days remaining** and **License support days remaining** (negative once expired), with **License expired** and **License support expired** problem sensors
+- **License days remaining** and **License support days remaining** (negative once expired),
+  with **License expired** and **License support expired** problem sensors
 - For each license unit (instances, sockets, points): **used**, **licensed** and **used percentage**
-- For each monitored collection that has returned resources: a resource **count**. Collections that report health (jobs, repositories, servers, proxies) also get a **Health** percentage and a **Problem** sensor.
+- For each monitored collection that has returned resources: a resource **count**. Collections
+  that report health (jobs, repositories, servers, proxies) also get a **Health** percentage and
+  a **Problem** sensor
 
-Collections that are empty — platforms Veeam ONE doesn't monitor in your environment — create no entities. They appear automatically if resources show up later.
+Collections that are empty (platforms Veeam ONE doesn't monitor in your environment) create no
+entities. They appear automatically if resources show up later.
 
-### Resource devices
+### Resource Devices
 
-Jobs, repositories, backup servers and Microsoft 365 servers and proxies each get their own device, linked to the Veeam ONE device:
+Jobs, repositories, backup servers and Microsoft 365 servers and proxies each get their own
+device, linked to the Veeam ONE device:
 
 | Collection | Entities |
 | --- | --- |
@@ -56,15 +185,21 @@ Jobs, repositories, backup servers and Microsoft 365 servers and proxies each ge
 
 ¹ Disabled by default; enable it from the entity's settings. **Licensed sockets** is disabled by default too.
 
-An entity is only created when Veeam ONE returns its field. The Status sensor carries the rest of the resource's fields as attributes. **Problem** is on for Failed, Warning, Error, Disconnected, Inaccessible, OutOfDate, NotResponding and Offline, and unknown when the status is Unknown.
+An entity is only created when Veeam ONE returns its field. The Status sensor carries the rest
+of the resource's fields as attributes. **Problem** is on for Failed, Warning, Error,
+Disconnected, Inaccessible, OutOfDate, NotResponding and Offline, and unknown when the status is
+Unknown.
 
-Users, groups, sites, teams, VMs, hosts, datastores, Cloud Director, Hyper-V, public cloud and protected objects are counted but don't get devices, so a large tenant doesn't create thousands of them.
+Users, groups, sites, teams, VMs, hosts, datastores, Cloud Director, Hyper-V, public cloud and
+protected objects are counted but don't get devices, so a large tenant doesn't create thousands
+of them.
 
-When Veeam ONE stops returning a resource, its device is removed. A collection that fails to load keeps its devices until it loads again.
+When Veeam ONE stops returning a resource, its device is removed. A collection that fails to
+load keeps its devices until it loads again.
 
-## Actions
+## Alarms
 
-### `veeam_one.resolve_alarm`
+### The `veeam_one.resolve_alarm` action
 
 Resolves triggered alarms by ID. The IDs are in the `alarms` attribute of **Active alarms**.
 
@@ -77,50 +212,11 @@ data:
 
 `config_entry_id` is only needed when more than one Veeam ONE server is configured.
 
-The Veeam ONE 2.3 API does **not** expose the VBR job start/stop/retry/enable/disable or repository-rescan operations. Use the Veeam Backup & Replication integration for those.
-
-## Upgrading from 0.1.0
-
-0.1.0 built resource IDs from the wrong fields and made a device for every triggered alarm. The first start after upgrading removes all of this integration's old entities and devices and recreates them, so entity IDs may change. Update any dashboards or automations that used them. The alarm **Resolve** buttons are replaced by the `veeam_one.resolve_alarm` action.
-
-## Supported versions
-
-- Veeam ONE servers that serve REST API 2.3, which `veeam-one` 0.2 speaks. Tested against Veeam ONE 13.0.1. Older servers that only serve 2.1 or 2.2 aren't supported yet.
-- Home Assistant 2026.8 or later.
-
-## Installation
-
-Install through HACS as a custom repository, or copy `custom_components/veeam_one` into Home Assistant, then restart. The integration installs `veeam-one>=0.2.0,<1.0.0` automatically.
-
-Veeam ONE needs an account that can sign in to the Veeam ONE Web Client. A read-only role is enough for monitoring; resolving alarms needs a role that can resolve alarms in Veeam ONE.
-
-## Configuration
-
-Add **Veeam ONE** from **Settings → Devices & services → Add integration**.
-
-| Field | Description |
-| --- | --- |
-| Host | Hostname or IP address of the Veeam ONE Web Services server |
-| Port | REST API port. Veeam ONE Web Services uses **1239** unless it was changed at install time. If nothing answers on the port you enter but Veeam ONE does answer on 1239, the form says so. |
-| Username / Password | A Veeam ONE account, e.g. `DOMAIN\user` |
-| Verify SSL certificate | Turn off only if the server uses a certificate Home Assistant doesn't trust, such as the self-signed one Veeam ONE installs |
-| API version | **Automatic** (the default) probes the server on every start and uses the newest REST API version that both the server and the installed `veeam-one` library support. Pick a version only to pin it. |
-
-After setup:
-
-- **Configure** changes the API version (Automatic or a fixed version) and reloads the integration.
-- **Reconfigure** (the ⋮ menu on the integration entry) changes the host, port, credentials or SSL setting without removing the integration.
-- If Veeam ONE rejects the stored credentials, Home Assistant shows a **Reauthenticate** prompt.
-
-## Data updates
-
-The integration polls Veeam ONE every 60 seconds: service information, licensing, triggered alarms and every monitored collection. At most six requests run at a time, so a poll doesn't load the Veeam ONE database heavily. Veeam ONE collects from the servers it monitors on its own schedule, so a change can take a few minutes to appear.
-
-If one collection fails to load, for example because Veeam ONE doesn't monitor that platform, the rest still update and that collection keeps its last values. If the whole API is unreachable, every entity becomes unavailable and **Connected** turns off.
-
 ## Repairs
 
-When the Veeam ONE license is within 30 days of expiring, or has expired, a repair issue appears under **Settings → Repairs**. It clears on its own once Veeam ONE reports a renewed license.
+When the Veeam ONE license is within 30 days of expiring, or has expired, a repair issue
+appears under **Settings → Repairs**. It clears on its own once Veeam ONE reports a renewed
+license.
 
 ## Automation Blueprints
 
@@ -138,7 +234,7 @@ Click **Import blueprint**, then create automations from it under
 
 ### Alarm triggered
 
-Fires when Veeam ONE raises a new alarm or one escalates from Warning to Error, and optionally when alarms are resolved. Watches the `alarms` attribute of **Active alarms**, so each alarm is reported once. Hands your action the `alarm_ids` and `entry_id` that [`veeam_one.resolve_alarm`](#veeam_oneresolve_alarm) needs.
+Fires when Veeam ONE raises a new alarm or one escalates from Warning to Error, and optionally when alarms are resolved. Watches the `alarms` attribute of **Active alarms**, so each alarm is reported once. Hands your action the `alarm_ids` and `entry_id` that [`veeam_one.resolve_alarm`](#the-veeam_oneresolve_alarm-action) needs.
 
 [![Import blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fraw.githubusercontent.com%2FCenvora%2Fha-veeam-one%2Fmain%2Fblueprints%2Fautomation%2Fveeam_one%2Falarm_triggered.yaml)
 
@@ -196,9 +292,9 @@ Veeam ONE fires no events of its own, so every blueprint reacts to entity states
 the integration or restarting Home Assistant takes the entities through unavailable; none of
 the blueprints treat coming back from that as something new to report.
 
-## Examples
+## Example Automations
 
-Notify when a backup job reports a problem:
+### Notify on a Job Problem
 
 ```yaml
 triggers:
@@ -211,7 +307,7 @@ actions:
       message: "{{ trigger.to_state.name }} is on"
 ```
 
-Resolve every active alarm each morning:
+### Resolve Every Active Alarm Each Morning
 
 ```yaml
 triggers:
@@ -228,28 +324,175 @@ actions:
       comment: Cleared by Home Assistant
 ```
 
-Other uses: a dashboard of repository free space, a warning when **Days until out of space** drops below a week, or tracking license usage.
+## Removal
 
-## Known limitations
+To remove the integration from Home Assistant:
 
-- The Veeam ONE REST API can't start, stop, enable or disable jobs or rescan repositories. Use the Veeam Backup & Replication or Veeam Backup for Microsoft 365 integrations for that.
-- Veeam ONE doesn't announce itself on the network, so it can't be discovered automatically; add it by hand.
-- VMs, hosts, datastores, Microsoft 365 users and protected objects are counted, not given their own devices.
-- The `alarms` attribute lists at most 50 alarms.
+1. Go to **Settings** → **Devices & Services**
+2. Find the **Veeam ONE** integration
+3. Click the three dots menu (⋮) and select **Delete**
+4. Confirm the deletion
+
+All devices and entities associated with this integration will be removed. To remove the files
+as well, remove the repository in HACS (or delete `custom_components/veeam_one`) and restart
+Home Assistant.
 
 ## Troubleshooting
 
-- **Cannot connect**: check that Home Assistant can reach the Veeam ONE Web Services server on the configured port (1239 by default). Opening `https://<host>:1239/api/v2.3/about` from the same network should give a 401 response, which means the API is up.
-- **Wrong port**: use the port the error message names.
-- **Invalid authentication**: confirm the account can sign in to the Veeam ONE Web Client, and include the domain, e.g. `DOMAIN\user`.
-- **SSL errors**: Veeam ONE installs a self-signed certificate. Turn off **Verify SSL certificate**, or install a trusted certificate on the server.
-- **Entities missing for a platform**: the collection is empty, or Veeam ONE refused it. **Download diagnostics** on the integration entry shows each collection's count and the error for any that failed.
-- **Debug logs**: choose **Enable debug logging** on the integration entry, reproduce the problem, then disable it to download the log.
+### Connection Issues
 
-## Removal
+**Problem**: Integration fails to connect to Veeam ONE
 
-Go to **Settings → Devices & services → Veeam ONE**, open the ⋮ menu on the entry and choose **Delete**. To remove the files as well, remove the repository in HACS (or delete `custom_components/veeam_one`) and restart Home Assistant.
+**Solutions**:
+- Check that Home Assistant can reach the Veeam ONE Web Services server on the configured port
+  (1239 by default). Opening `https://<host>:1239/api/v2.3/about` from the same network should
+  give a 401 response, which means the API is up
+- If the form reports a wrong port, use the port the error message names
+- Ensure firewall rules allow traffic on the REST API port
+- Veeam ONE installs a self-signed certificate: turn off **Verify SSL**, or install a trusted
+  certificate on the server
+
+### Authentication Failures
+
+**Problem**: Invalid credentials error during setup or re-authentication
+
+**Solutions**:
+- Confirm the account can sign in to the Veeam ONE Web Client
+- Include the domain in the username, e.g. `DOMAIN\user`
+- Check if the account is locked or its password has expired
+
+### Missing Entities
+
+**Problem**: Entities are missing for a platform
+
+**Solutions**:
+- The collection may be empty, or Veeam ONE refused it. **Download diagnostics** on the
+  integration entry shows each collection's count and the error for any that failed
+- Veeam ONE collects on its own schedule, so new resources can take a few minutes to appear
+- Some entities are disabled by default; enable them from the entity's settings
+
+### Debug Logs
+
+Choose **Enable debug logging** on the integration entry, reproduce the problem, then disable
+it to download the log.
+
+## Known Limitations
+
+- **No job control**: The Veeam ONE REST API can't start, stop, enable or disable jobs or rescan
+  repositories. Use the [Veeam Backup & Replication](https://github.com/Cenvora/ha-veeam-br) or
+  [Veeam Backup for Microsoft 365](https://github.com/Cenvora/ha-veeam-365) integrations for that
+- **No discovery**: Veeam ONE doesn't announce itself on the network, so add it by hand
+- **Counted, not devices**: VMs, hosts, datastores, Microsoft 365 users and protected objects are
+  counted, not given their own devices
+- **Alarm list**: The `alarms` attribute lists at most 50 alarms
+- **Real-time Updates**: Changes are reflected every 60 seconds, after Veeam ONE has collected them
+
+## Supported Devices & Functions
+
+### Monitored Platforms
+
+The integration reads Veeam ONE's monitoring API across:
+
+- ✅ **Veeam Backup & Replication** - backup, replication and backup copy jobs; repositories; backup servers
+- ✅ **Veeam Cloud Connect** - tenants, cloud gateways and gateway pools
+- ✅ **Veeam Backup for Microsoft 365** - organizations, servers, proxies, repositories, object
+  storage, backup/copy jobs and protected Microsoft 365 objects
+- ✅ **VMware vSphere** - vCenters, hosts, clusters, datastores, datastore clusters, resource pools, VMs and vApps
+- ✅ **VMware Cloud Director** - Cloud Director servers, organizations, organization/provider VDCs, datastores and vApps
+- ✅ **Microsoft Hyper-V** - hosts, clusters, VMs, file servers/shares, physical disks and SCVMM servers
+- ✅ **Public Cloud** - cloud VMs, databases, file shares and their protected/backup resources
+- ✅ **Veeam ONE** - service/about information, licensing and triggered alarms
+
+### Supported Entities
+
+- **Sensors**: Status, alarm counts, run times, capacity, free space, license details and usage, collection counts and health
+- **Binary Sensors**: Connected, problem, license expired
+- **Actions**: Resolve alarms
+
+### Unsupported (Future Enhancements)
+
+- ⏳ Veeam ONE servers that only serve REST API 2.1 or 2.2
+
+## Support
+
+- **Issues**: [GitHub Issues](https://github.com/Cenvora/ha-veeam-one/issues)
+- **Documentation**: This README and inline code documentation
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+### Development Setup
+
+To set up the development environment:
+
+```bash
+# Install development and test dependencies
+pip install ruff ty -r requirements_test.txt
+```
+
+### Code Quality
+
+This project uses automated testing and formatting:
+
+- **Ruff**: Code formatting and linting (line length: 100)
+- **ty**: Type checking
+- **pytest**: Tests, using `pytest-homeassistant-custom-component`
+- **HACS Action**: HACS integration validation
+- **Hassfest**: Home Assistant manifest validation
+
+Run formatting and checks locally:
+
+```bash
+# Format code
+ruff format custom_components/
+
+# Run linting
+ruff check custom_components/
+
+# Type checking
+ty check custom_components/
+
+# Run tests
+pytest
+
+# Validate JSON
+python -m json.tool custom_components/veeam_one/manifest.json
+```
+
+### CI/CD
+
+All pull requests are automatically validated with:
+- Python code formatting and linting (Ruff)
+- Type checking (ty)
+- Tests (pytest)
+- HACS validation
+- Home Assistant manifest validation (hassfest)
+- JSON validation
+
+### Release Process
+
+The version in `manifest.json` is automatically updated when a new release tag is created:
+
+1. Create and push a tag with the format `v*` (e.g., `v1.0.0`, `v0.3.1b3`)
+   ```bash
+   git tag v1.0.0
+   git push origin v1.0.0
+   ```
+
+   **Note:** Tags should be created from the default branch to ensure consistency.
+
+2. The GitHub Actions workflow automatically:
+   - Extracts the version from the tag (removes the `v` prefix)
+   - Updates the `version` field in `custom_components/veeam_one/manifest.json`
+   - Commits and pushes the change to the default branch
+
+3. The updated manifest.json is now ready for the release
 
 ## License
 
-MIT
+This project is licensed under the terms included in the LICENSE file.
+
+## Credits
+
+This integration uses the [veeam-one](https://github.com/Cenvora/veeam-one) Python library for communication with Veeam ONE servers. The library is automatically installed by Home Assistant when you add this integration - no manual installation required.
