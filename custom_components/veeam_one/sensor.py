@@ -287,6 +287,103 @@ class LicenseUsageSensor(CoordinatorEntity[VeeamOneCoordinator], SensorEntity):
                 "manufacturer": "Veeam", "model": "Veeam ONE"}
 
 
+
+class AlarmStatusSensor(VeeamOneEntity, SensorEntity):
+    """Detailed status for a triggered alarm."""
+
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_icon = "mdi:alarm-light-outline"
+
+    def __init__(self, coordinator: VeeamOneCoordinator, object_id: str, name: str) -> None:
+        super().__init__(coordinator, "alarms", object_id, name)
+        self._attr_name = "Status"
+        self._attr_unique_id = f"{coordinator.entry_id}_alarm_{object_id}_status"
+
+    def item(self) -> dict[str, Any]:
+        for alarm in self.coordinator.data.get("alarms", []):
+            if str(alarm.get("triggeredAlarmId")) == self.object_id:
+                return alarm
+        return {}
+
+    @property
+    def native_value(self) -> str | None:
+        return self.item().get("status")
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        item = self.item()
+        return {
+            "description": item.get("description"),
+            "comment": item.get("comment"),
+            "repeat_count": item.get("repeatCount"),
+            "child_alarms_count": item.get("childAlarmsCount"),
+            "alarm_template_id": item.get("alarmTemplateId"),
+            "predefined_alarm_id": item.get("predefinedAlarmId"),
+            "alarm_source": item.get("alarmSource"),
+            "remediation": item.get("remediation"),
+        }
+
+
+class AlarmTriggeredTimeSensor(VeeamOneEntity, SensorEntity):
+    """When a triggered alarm occurred."""
+
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+
+    def __init__(self, coordinator: VeeamOneCoordinator, object_id: str, name: str) -> None:
+        super().__init__(coordinator, "alarms", object_id, name)
+        self._attr_name = "Triggered"
+        self._attr_unique_id = f"{coordinator.entry_id}_alarm_{object_id}_triggered"
+
+    def item(self) -> dict[str, Any]:
+        for alarm in self.coordinator.data.get("alarms", []):
+            if str(alarm.get("triggeredAlarmId")) == self.object_id:
+                return alarm
+        return {}
+
+    @property
+    def native_value(self) -> datetime | None:
+        return _timestamp(self.item().get("triggeredTime"))
+
+
+class AlarmRepeatCountSensor(VeeamOneEntity, SensorEntity):
+    """Number of times an alarm has triggered."""
+
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_state_class = "measurement"
+
+    def __init__(self, coordinator: VeeamOneCoordinator, object_id: str, name: str) -> None:
+        super().__init__(coordinator, "alarms", object_id, name)
+        self._attr_name = "Repeat Count"
+        self._attr_unique_id = f"{coordinator.entry_id}_alarm_{object_id}_repeat_count"
+
+    def item(self) -> dict[str, Any]:
+        for alarm in self.coordinator.data.get("alarms", []):
+            if str(alarm.get("triggeredAlarmId")) == self.object_id:
+                return alarm
+        return {}
+
+    @property
+    def native_value(self) -> int | None:
+        value = self.item().get("repeatCount")
+        return value if isinstance(value, int) else None
+
+def _alarm_entities(coordinator: VeeamOneCoordinator) -> list[SensorEntity]:
+    entities: list[SensorEntity] = []
+    for alarm in coordinator.data.get("alarms", []):
+        alarm_id = alarm.get("triggeredAlarmId")
+        if alarm_id is None:
+            continue
+        object_id = str(alarm_id)
+        name = str(alarm.get("name") or alarm.get("alarmName") or object_id)
+        entities.extend((
+            AlarmStatusSensor(coordinator, object_id, name),
+            AlarmTriggeredTimeSensor(coordinator, object_id, name),
+            AlarmRepeatCountSensor(coordinator, object_id, name),
+        ))
+    return entities
+
+
 def _resource_entities(coordinator: VeeamOneCoordinator) -> list[SensorEntity]:
     entities: list[SensorEntity] = []
     for kind in COLLECTIONS:
