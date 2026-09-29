@@ -10,7 +10,7 @@ Veeam ONE Integration for Home Assistant
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/hacs/integration)
 
-A Home Assistant custom integration for monitoring Veeam ONE using the Cenvora `veeam-one` Python client and Veeam ONE REST API 2.3.
+A Home Assistant custom integration (Home Assistant 2026.8 or later) for monitoring Veeam ONE using the Cenvora `veeam-one` Python client and Veeam ONE REST API 2.3.
 
 This project is an independent, open source project. It is not affiliated with, endorsed by, or sponsored by Veeam Software.
 
@@ -29,47 +29,57 @@ The integration uses Veeam ONE's v2.3 monitoring API across:
 
 ## Entities
 
-Each resource returned by the monitoring API is represented as a Home Assistant device. Resource entities are created dynamically as resources appear and include the fields that are available for that resource.
+### Veeam ONE server device
 
-Common resource entities include:
+- **Connected** — whether the latest poll of the REST API succeeded
+- **Version** — installed Veeam ONE version
+- **Active Alarms** — triggered alarms with status Error or Warning; the `alarms` attribute lists them (ID, name, status, time, object, description), newest first, up to 50
+- **Error Alarms** and **Warning Alarms** — the same, split by status
+- **License Type**, **Package**, **Company**, **Licensed Instances** and **Licensed Sockets**
+- **License Days Remaining** and **License Support Days Remaining** (negative once expired), with **License Expired** and **License Support Expired** problem sensors
+- For each license unit (instances, sockets, points): **Used**, **Licensed** and **Used Percentage**
+- For each monitored collection that has returned resources: a resource **count**. Collections that report health (jobs, repositories, servers, proxies) also get a **Health** percentage and a **Problem** sensor.
 
-- **Status** — Veeam ONE status, state, connection state or power state
-- **Problem** — binary health indicator
-- **Collection Health** — percentage of resources with a known healthy status
-- **Collection Problem** — collection-level binary health indicator
-- **Last Run** and **Last Run Duration** for workloads that report job sessions
-- **Average Run Duration** and **Last Transferred Data** where available
-- **Capacity**, **Free Space**, **Free Space Percentage**, **Running Tasks** and **Days Until Out of Space** for repositories/resources that expose those values
-- **CPU, memory and host information** where reported
-- **Configuration/diagnostic flags** such as immutable, ReFS, Cloud Connect and upgrade-required state
-- The complete returned resource payload is also retained as attributes on the resource Status entity, so API fields not promoted to their own entity remain available
+Collections that are empty — platforms Veeam ONE doesn't monitor in your environment — create no entities. They appear automatically if resources show up later.
 
-Aggregate diagnostic sensors are also provided for every monitored collection, including total and not-healthy counts.
+### Resource devices
 
-### Licensing
+Jobs, repositories, backup servers and Microsoft 365 servers and proxies each get their own device, linked to the Veeam ONE device:
 
-The Veeam ONE device exposes:
+| Collection | Entities |
+| --- | --- |
+| VBR backup, replication and backup copy jobs | Status, Problem, Last Run, Last Run Duration, Average Run Duration, Last Transferred Data |
+| VBR repositories | Status, Problem, Capacity, Free Space, Free Space Percentage, Running Tasks, Days Until Out of Space |
+| VBR backup servers, Microsoft 365 servers and proxies | Status, Problem |
+| Microsoft 365 backup and copy jobs | Status, Problem, Last Run, Last Run Duration, Last Transferred Data, Processed Items |
+| Microsoft 365 repositories and object storage | Capacity, Free Space, Used Space, Free Space Percentage |
 
-- License type and package
-- Licensed instances and sockets
-- License company
-- License expiration and support-expiration countdowns
-- Current license-unit usage: used, available, licensed and utilization percentage
-- License Expired and License Support Expired binary health indicators
+An entity is only created when Veeam ONE returns its field. The Status sensor carries the rest of the resource's fields as attributes. **Problem** is on for Failed, Warning, Error, Disconnected, Inaccessible, OutOfDate, NotResponding and Offline, and unknown when the status is Unknown.
 
-### Veeam ONE service
+Users, groups, sites, teams, VMs, hosts, datastores, Cloud Director, Hyper-V, public cloud and protected objects are counted but don't get devices, so a large tenant doesn't create thousands of them.
 
-The Veeam ONE device also exposes service/about information including service status, version and build when returned by the API.
-
-### Alarms
-
-Triggered alarms are exposed individually and receive a **Resolve** button. Aggregate critical, warning and informational alarm counts are also provided. Resolving an alarm uses the Veeam ONE REST API and refreshes the integration afterward.
+When Veeam ONE stops returning a resource, its device is removed. A collection that fails to load keeps its devices until it loads again.
 
 ## Actions
 
-Veeam ONE 2.3 exposes alarm-resolution operations, so alarm resolve buttons are implemented.
+### `veeam_one.resolve_alarm`
 
-The Veeam ONE 2.3 API does **not** expose the VBR job start/stop/retry/enable/disable or repository-rescan operations. Those actions therefore are not fabricated in this integration; use the Veeam Backup & Replication API/integration for operational VBR controls.
+Resolves triggered alarms by ID. The IDs are in the `alarms` attribute of **Active Alarms**.
+
+```yaml
+action: veeam_one.resolve_alarm
+data:
+  alarm_ids: [1234]
+  comment: Fixed the proxy
+```
+
+`config_entry_id` is only needed when more than one Veeam ONE server is configured.
+
+The Veeam ONE 2.3 API does **not** expose the VBR job start/stop/retry/enable/disable or repository-rescan operations. Use the Veeam Backup & Replication integration for those.
+
+## Upgrading from 0.1.0
+
+0.1.0 built resource IDs from the wrong fields and made a device for every triggered alarm. The first start after upgrading removes all of this integration's old entities and devices and recreates them, so entity IDs may change. Update any dashboards or automations that used them. The alarm **Resolve** buttons are replaced by the `veeam_one.resolve_alarm` action.
 
 ## Installation
 

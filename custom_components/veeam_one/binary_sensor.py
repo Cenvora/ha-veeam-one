@@ -2,130 +2,116 @@
 
 from __future__ import annotations
 
-from typing import Any
+from datetime import datetime, timezone
 
 from homeassistant.components.binary_sensor import BinarySensorDeviceClass, BinarySensorEntity
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import DOMAIN
-from .coordinator import COLLECTIONS, VeeamOneCoordinator
-from .entity import VeeamOneEntity, resource_id, resource_name
-from .monitoring_binary_sensor import (
-    CollectionProblemSensor,
-    LicenseExpiredSensor,
-    LicenseSupportExpiredSensor,
+from .coordinator import COLLECTIONS, VeeamOneCoordinator, is_problem
+from .entity import (
+    ResourceEntity,
+    VeeamOneEntity,
+    add_entities_dynamically,
+    parse_timestamp,
+    populated_collections,
+    resources,
 )
 
 
-def _status(item: dict[str, Any]) -> str:
-    for key in ("status", "state", "connectionState", "powerState", "bestPracticeCheckStatus"):
-        if item.get(key) is not None:
-            return str(item[key]).lower()
-    return ""
+class ConnectedSensor(VeeamOneEntity, BinarySensorEntity):
+    """Whether the latest poll of the Veeam ONE API succeeded."""
 
-
-def _healthy(status: str) -> bool:
-    if not status:
-        return True
-    return any(
-        value in status
-        for value in (
-            "success",
-            "successful",
-            "normal",
-            "connected",
-            "online",
-            "available",
-            "ok",
-            "ready",
-            "running",
-        )
-    )
-
-
-class Connected(CoordinatorEntity[VeeamOneCoordinator], BinarySensorEntity):
-    """Veeam ONE API connectivity."""
-
-    _attr_has_entity_name = True
-    _attr_name = "Connected"
-    _attr_icon = "mdi:lan-connect"
+    _attr_device_class = BinarySensorDeviceClass.CONNECTIVITY
 
     def __init__(self, coordinator: VeeamOneCoordinator) -> None:
-        super().__init__(coordinator)
-        self._attr_unique_id = f"{coordinator.entry_id}_connected"
+        super().__init__(coordinator, "connected", "Connected")
+
+    @property
+    def available(self) -> bool:
+        return True
 
     @property
     def is_on(self) -> bool:
         return self.coordinator.last_update_success
 
-    @property
-    def device_info(self) -> dict[str, Any]:
-        return {
-            "identifiers": {(DOMAIN, self.coordinator.entry_id)},
-            "name": "Veeam ONE",
-            "manufacturer": "Veeam",
-            "model": "Veeam ONE",
-        }
 
-
-class ResourceProblemSensor(VeeamOneEntity, BinarySensorEntity):
-    """Whether an individual Veeam ONE resource reports a problem."""
+class LicenseExpiredSensor(VeeamOneEntity, BinarySensorEntity):
+    """Whether the license, or its support, has expired."""
 
     _attr_device_class = BinarySensorDeviceClass.PROBLEM
-    _attr_icon = "mdi:shield-check"
+    _attr_icon = "mdi:license"
 
-    def __init__(
-        self, coordinator: VeeamOneCoordinator, kind: str, object_id: str, name: str
-    ) -> None:
-        super().__init__(coordinator, kind, object_id, name)
-        self._attr_name = "Problem"
-        self._attr_unique_id = f"{coordinator.entry_id}_{kind}_{object_id}_problem"
+    def __init__(self, coordinator: VeeamOneCoordinator, field: str, key: str, name: str) -> None:
+        super().__init__(coordinator, key, name)
+        self.field = field
 
     @property
-    def is_on(self) -> bool:
-        status = _status(self.item())
-        problem = not _healthy(status)
-        self._attr_icon = "mdi:alert-circle" if problem else "mdi:shield-check"
-        return problem
+    def is_on(self) -> bool | None:
+        expiration = parse_timestamp(self.coordinator.data.get("license", {}).get(self.field))
+        if expiration is None:
+            return None
+        return expiration <= datetime.now(timezone.utc)
 
 
-def _resource_entities(coordinator: VeeamOneCoordinator) -> list[ResourceProblemSensor]:
-    entities = []
-    for kind in COLLECTIONS:
-        for item in coordinator.data.get("collections", {}).get(kind, []):
-            object_id = resource_id(item)
-            if object_id:
-                entities.append(
-                    ResourceProblemSensor(
-                        coordinator, kind, object_id, resource_name(item, object_id)
-                    )
-                )
+class CollectionProblemSensor(VeeamOneEntity, BinarySensorEntity):
+    """Whether any resource in a collection reports a problem."""
+
+    _attr_device_class = BinarySensorDeviceClass.PROBLEM
+
+    def __init__(self, coordinator: VeeamOneCoordinator, key: str) -> None:
+        super().__init__(coordinator, f"{key}_problem", f"{COLLECTIONS[key].label} Problem")
+        self.key = key
+
+    @property
+    def is_on(self) -> bool | None:
+        status_key = COLLECTIONS[self.key].status_key
+        items = self.coordinator.data.get("resources", {}).get(self.key, {}).values()
+        known = [p for item in items if (p := is_problem(item.get(status_key))) is not None]
+        return any(known) if known else None
+
+
+class ResourceProblemSensor(ResourceEntity, BinarySensorEntity):
+    """Whether a resource's status reports a problem."""
+
+    _attr_device_class = BinarySensorDeviceClass.PROBLEM
+
+    def __init__(self, coordinator: VeeamOneCoordinator, key: str, object_id: str) -> None:
+        super().__init__(coordinator, key, object_id, "problem", "Problem")
+
+    @property
+    def is_on(self) -> bool | None:
+        return is_problem(self.item().get(self.collection.status_key or ""))
+
+
+def _entities(coordinator: VeeamOneCoordinator) -> list[VeeamOneEntity]:
+    entities: list[VeeamOneEntity] = [
+        ConnectedSensor(coordinator),
+        LicenseExpiredSensor(coordinator, "expirationDate", "license_expired", "License Expired"),
+        LicenseExpiredSensor(
+            coordinator,
+            "supportExpirationDate",
+            "license_support_expired",
+            "License Support Expired",
+        ),
+    ]
+    entities.extend(
+        CollectionProblemSensor(coordinator, key)
+        for key in populated_collections(coordinator)
+        if COLLECTIONS[key].status_key
+    )
+    entities.extend(
+        ResourceProblemSensor(coordinator, key, object_id)
+        for key, object_id, _ in resources(coordinator)
+        if COLLECTIONS[key].status_key
+    )
     return entities
 
 
-async def async_setup_entry(hass: Any, entry: Any, async_add_entities: Any) -> None:
-    """Set up connectivity and per-resource problem sensors."""
+async def async_setup_entry(
+    hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
+) -> None:
+    """Set up Veeam ONE binary sensors."""
     coordinator: VeeamOneCoordinator = entry.runtime_data
-    async_add_entities(
-        [
-            Connected(coordinator),
-            LicenseExpiredSensor(coordinator),
-            LicenseSupportExpiredSensor(coordinator),
-            *(CollectionProblemSensor(coordinator, key) for key in COLLECTIONS),
-        ]
-    )
-
-    entities = _resource_entities(coordinator)
-    async_add_entities(entities)
-    known = {entity.unique_id for entity in entities if entity.unique_id}
-
-    def _sync() -> None:
-        new_entities = []
-        for entity in _resource_entities(coordinator):
-            if entity.unique_id and entity.unique_id not in known:
-                known.add(entity.unique_id)
-                new_entities.append(entity)
-        if new_entities:
-            async_add_entities(new_entities)
-
-    entry.async_on_unload(coordinator.async_add_listener(_sync))
+    add_entities_dynamically(coordinator, entry, async_add_entities, lambda: _entities(coordinator))
