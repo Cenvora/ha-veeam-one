@@ -5,7 +5,7 @@ from typing import Any
 
 from homeassistant.components.button import ButtonEntity
 from homeassistant.exceptions import HomeAssistantError
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.helpers.entity import EntityCategory
 from veeam_one.v2_3.models.resolve_multiple_triggered_alarms_request import ResolveMultipleTriggeredAlarmsRequest
 
 from .const import DOMAIN
@@ -13,15 +13,15 @@ from .coordinator import VeeamOneCoordinator
 from .entity import VeeamOneEntity
 
 
-class ResolveAlarm(VeeamOneEntity, CoordinatorEntity[VeeamOneCoordinator], ButtonEntity):
+class ResolveAlarm(VeeamOneEntity, ButtonEntity):
     """Resolve one triggered Veeam ONE alarm."""
 
     _attr_name = "Resolve"
     _attr_icon = "mdi:alarm-off"
-    _attr_entity_category = "config"
+    _attr_entity_category = EntityCategory.CONFIG
 
     def __init__(self, coordinator: VeeamOneCoordinator, object_id: str, name: str) -> None:
-        VeeamOneEntity.__init__(self, coordinator, "alarms", object_id, name)
+        super().__init__(coordinator, "alarms", object_id, name)
         self._attr_name = "Resolve"
         self._attr_unique_id = f"{coordinator.entry_id}_alarm_{object_id}_resolve"
 
