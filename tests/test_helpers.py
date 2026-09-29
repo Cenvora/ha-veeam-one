@@ -17,3 +17,9 @@ def test_items():
 def test_major_monitoring_domains_are_configured():
     keys = set(COLLECTIONS)
     assert {"cloud_connect_tenants", "m365_backup_jobs", "vsphere_vms", "vcd_organizations", "hyperv_vms", "public_cloud_vms"} <= keys
+
+
+def test_license_usage_is_collected():
+    from custom_components.veeam_one.coordinator import COLLECTIONS
+
+    assert "jobs" in COLLECTIONS
