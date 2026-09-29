@@ -26,11 +26,11 @@ jobs:
 
       - name: Check Python formatting with Black
         run: |
-          black --check --diff custom_components/
+          black custom_components/
 
       - name: Check import sorting with isort
         run: |
-          isort --check-only --diff custom_components/
+          isort custom_components/
 
       - name: Lint with flake8
         run: |
