@@ -69,7 +69,7 @@ COLLECTIONS: dict[str, tuple[str, str]] = {
     "public_cloud_vms": ("Public Cloud VMs", "public_cloud.public_cloud_get_public_cloud_vms"),
     "public_cloud_databases": ("Public Cloud Databases", "public_cloud.public_cloud_get_public_cloud_databases"),
     "public_cloud_file_shares": ("Public Cloud File Shares", "public_cloud.public_cloud_get_public_cloud_file_shares"),
-    "public_cloud_vm_backups": ("Protected Public Cloud VMs", "public_cloud_protected_data.protected_data_public_cloud_get_all_protected_cloud_virtual_machines"),
+    "public_cloud_vm_backups": ("Protected Public Cloud VMs", "public_cloud_protected_data.protected_data_public_cloud_get_all_cloud_virtual_machine_backups"),
     "public_cloud_db_backups": ("Protected Public Cloud Databases", "public_cloud_protected_data.protected_data_public_cloud_get_all_protected_cloud_databases"),
     "public_cloud_file_backups": ("Protected Public Cloud File Shares", "public_cloud_protected_data.protected_data_public_cloud_get_all_protected_cloud_file_shares"),
     "public_cloud_network_backups": ("Protected Public Cloud Networks", "public_cloud_protected_data.protected_data_public_cloud_get_all_protected_cloud_networks"),
