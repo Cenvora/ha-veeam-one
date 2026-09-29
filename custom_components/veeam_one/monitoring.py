@@ -15,7 +15,17 @@ def _status(item: dict[str, Any]) -> str | None:
     return None
 
 def _healthy(status: str) -> bool:
-    return status.lower() in {"success", "successful", "normal", "connected", "online", "available", "ok", "ready", "running"}
+    return status.lower() in {
+        "success",
+        "successful",
+        "normal",
+        "connected",
+        "online",
+        "available",
+        "ok",
+        "ready",
+        "running",
+    }
 
 def _severity(alarm: dict[str, Any]) -> str | None:
     for key in ("severity", "alarmSeverity", "level", "priority"):
@@ -29,7 +39,12 @@ class AggregateEntity(CoordinatorEntity[VeeamOneCoordinator]):
     _attr_entity_category = EntityCategory.DIAGNOSTIC
     @property
     def device_info(self) -> dict[str, Any]:
-        return {"identifiers": {(DOMAIN, self.coordinator.entry_id)}, "name": "Veeam ONE", "manufacturer": "Veeam", "model": "Veeam ONE"}
+        return {
+            "identifiers": {(DOMAIN, self.coordinator.entry_id)},
+            "name": "Veeam ONE",
+            "manufacturer": "Veeam",
+            "model": "Veeam ONE",
+        }
 
 class ServiceSensor(AggregateEntity, SensorEntity):
     _attr_icon = "mdi:server-check"
@@ -55,7 +70,11 @@ class AlarmSeveritySensor(AggregateEntity, SensorEntity):
         self._attr_unique_id = f"{coordinator.entry_id}_alarms_{severity}"
     @property
     def native_value(self) -> int:
-        return sum(1 for alarm in self.coordinator.data.get("alarms", []) if _severity(alarm) == self.severity)
+        return sum(
+            1
+            for alarm in self.coordinator.data.get("alarms", [])
+            if _severity(alarm) == self.severity
+        )
 
 class CollectionHealthSensor(AggregateEntity, SensorEntity):
     _attr_native_unit_of_measurement = "%"
@@ -72,7 +91,9 @@ class CollectionHealthSensor(AggregateEntity, SensorEntity):
         known = [item for item in resources if _status(item)]
         if not known:
             return None
-        healthy = sum(1 for item in known if _healthy(_status(item) or ""))
+        healthy = sum(
+            1 for item in known if _healthy(_status(item) or "")
+        )
         return round(healthy * 100 / len(known), 1)
 
 class LicenseUsagePercentageSensor(AggregateEntity, SensorEntity):
