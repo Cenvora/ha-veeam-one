@@ -485,7 +485,11 @@ async def async_setup_entry(hass: Any, entry: Any, async_add_entities: Any) -> N
             entities.append(LicenseUsagePercentageSensor(coordinator, unit))
     for key in COLLECTIONS:
         entities.extend(
-            (CollectionSensor(coordinator, key), FailedCollectionSensor(coordinator, key), CollectionHealthSensor(coordinator, key))
+            (
+                CollectionSensor(coordinator, key),
+                FailedCollectionSensor(coordinator, key),
+                CollectionHealthSensor(coordinator, key),
+            )
         )
     entities.extend(_resource_entities(coordinator))
     async_add_entities(entities)
