@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 
 from veeam_one import VeeamClient
 
 
-def create_client(data: dict[str, Any]) -> VeeamClient:
+def create_client(data: Mapping[str, Any]) -> VeeamClient:
     """Create the Veeam ONE smart client."""
     return VeeamClient(
         host=f"https://{data['host']}:{data['port']}",
