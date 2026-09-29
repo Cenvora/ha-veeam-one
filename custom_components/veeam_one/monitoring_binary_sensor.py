@@ -54,3 +54,20 @@ class LicenseSupportExpiredSensor(AggregateBinary):
         if expiration.tzinfo is None:
             expiration = expiration.replace(tzinfo=timezone.utc)
         return expiration <= datetime.now(timezone.utc)
+
+class CollectionProblemSensor(AggregateBinary):
+    _attr_device_class = BinarySensorDeviceClass.PROBLEM
+    _attr_icon = "mdi:shield-check"
+    def __init__(self, coordinator: VeeamOneCoordinator, key: str) -> None:
+        super().__init__(coordinator)
+        self.key = key
+        self._attr_name = f"{key.replace(chr(95), chr(32)).title()} Problem"
+        self._attr_unique_id = f"{coordinator.entry_id}_{key}_problem"
+    @property
+    def is_on(self) -> bool | None:
+        resources = self.coordinator.data.get("collections", {}).get(self.key, [])
+        known = [item for item in resources if item.get("status") or item.get("state") or item.get("connectionState") or item.get("powerState") or item.get("bestPracticeCheckStatus")]
+        if not known:
+            return None
+        healthy = {"success", "successful", "normal", "connected", "online", "available", "ok", "ready", "running"}
+        return any(str(next(value for value in (item.get("status"), item.get("state"), item.get("connectionState"), item.get("powerState"), item.get("bestPracticeCheckStatus")) if value is not None)).lower() not in healthy for item in known)
