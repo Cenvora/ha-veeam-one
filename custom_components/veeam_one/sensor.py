@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
+from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
 from homeassistant.const import EntityCategory
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -311,9 +311,15 @@ async def async_setup_entry(hass: Any, entry: Any, async_add_entities: Any) -> N
     """Set up Veeam ONE sensors."""
     coordinator: VeeamOneCoordinator = entry.runtime_data
     entities: list[SensorEntity] = [OverviewSensor(coordinator)]
-    for key in ("type", "package", "instances", "sockets"):
-        entities.append(LicenseSensor(coordinator, key, f"License {key.capitalize()}"))
-    entities.append(LicenseExpirationSensor(coordinator))
+    for key, name in (
+        ("type", "License Type"),
+        ("package", "License Package"),
+        ("instances", "Licensed Instances"),
+        ("sockets", "Licensed Sockets"),
+        ("company", "License Company"),
+    ):
+        entities.append(LicenseSensor(coordinator, key, name))
+    entities.extend((LicenseExpirationSensor(coordinator), LicenseSupportExpirationSensor(coordinator)))
     for unit in coordinator.data.get("license_usage", {}).get("units", []) or []:
         if isinstance(unit, dict):
             for field in ("used", "available", "licensed"):
