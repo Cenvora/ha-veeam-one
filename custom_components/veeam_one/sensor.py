@@ -1,20 +1,36 @@
 """Veeam ONE sensors."""
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any
 
-from homeassistant.components.sensor import SensorEntity
-from homeassistant.helpers.entity import EntityCategory
+from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
+from homeassistant.const import EntityCategory
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
 from .coordinator import COLLECTIONS, VeeamOneCoordinator
-from .entity import VeeamOneEntity
+from .entity import VeeamOneEntity, resource_id, resource_name
 
 
-def _status(item: dict[str, Any]) -> str:
-    value = item.get("status") or item.get("state") or item.get("connectionState")
-    return str(value).lower() if value is not None else ""
+def _status(item: dict[str, Any]) -> str | None:
+    for key in ("status", "state", "connectionState", "powerState", "bestPracticeCheckStatus"):
+        value = item.get(key)
+        if value is not None:
+            return str(value)
+    return None
+
+
+def _timestamp(value: Any) -> datetime | None:
+    if not value:
+        return None
+    if isinstance(value, datetime):
+        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    try:
+        result = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return result if result.tzinfo else result.replace(tzinfo=timezone.utc)
 
 
 class OverviewSensor(CoordinatorEntity[VeeamOneCoordinator], SensorEntity):
@@ -34,16 +50,12 @@ class OverviewSensor(CoordinatorEntity[VeeamOneCoordinator], SensorEntity):
 
     @property
     def device_info(self) -> dict[str, Any]:
-        return {
-            "identifiers": {(DOMAIN, self.coordinator.entry_id)},
-            "name": "Veeam ONE",
-            "manufacturer": "Veeam",
-            "model": "Veeam ONE",
-        }
+        return {"identifiers": {(DOMAIN, self.coordinator.entry_id)}, "name": "Veeam ONE",
+                "manufacturer": "Veeam", "model": "Veeam ONE"}
 
 
 class CollectionSensor(CoordinatorEntity[VeeamOneCoordinator], SensorEntity):
-    """Count resources exposed by a Veeam ONE API collection."""
+    """Count resources exposed by a collection."""
 
     _attr_has_entity_name = True
     _attr_entity_category = EntityCategory.DIAGNOSTIC
@@ -62,16 +74,12 @@ class CollectionSensor(CoordinatorEntity[VeeamOneCoordinator], SensorEntity):
 
     @property
     def device_info(self) -> dict[str, Any]:
-        return {
-            "identifiers": {(DOMAIN, self.coordinator.entry_id)},
-            "name": "Veeam ONE",
-            "manufacturer": "Veeam",
-            "model": "Veeam ONE",
-        }
+        return {"identifiers": {(DOMAIN, self.coordinator.entry_id)}, "name": "Veeam ONE",
+                "manufacturer": "Veeam", "model": "Veeam ONE"}
 
 
 class FailedCollectionSensor(CollectionSensor):
-    """Count resources whose reported state is not successful/healthy."""
+    """Count resources whose reported state is unhealthy."""
 
     def __init__(self, coordinator: VeeamOneCoordinator, key: str) -> None:
         super().__init__(coordinator, key)
@@ -82,52 +90,122 @@ class FailedCollectionSensor(CollectionSensor):
     @property
     def native_value(self) -> int:
         resources = self.coordinator.data.get("collections", {}).get(self.key, [])
-        return sum(
-            1
-            for item in resources
-            if _status(item)
-            and not any(
-                word in _status(item)
-                for word in ("success", "successful", "normal", "connected", "online", "available", "ok")
-            )
-        )
+        healthy = ("success", "successful", "normal", "connected", "online", "available", "ok", "ready")
+        return sum(1 for item in resources if (state := _status(item)) and not any(x in state.lower() for x in healthy))
 
 
-class ObjectSensor(VeeamOneEntity, SensorEntity):
-    """Detailed sensor for a selected resource."""
+class ResourceStatusSensor(VeeamOneEntity, SensorEntity):
+    """Status of an individual Veeam ONE resource."""
 
-    def __init__(
-        self,
-        coordinator: VeeamOneCoordinator,
-        kind: str,
-        object_id: str,
-        name: str,
-        field: str,
-        unit: str | None = None,
-    ) -> None:
-        super().__init__(coordinator, kind, object_id)
-        self._attr_name = name
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_icon = "mdi:information-outline"
+
+    def __init__(self, coordinator: VeeamOneCoordinator, kind: str, object_id: str, name: str) -> None:
+        super().__init__(coordinator, kind, object_id, name)
+        self._attr_name = "Status"
+        self._attr_unique_id = f"{coordinator.entry_id}_{kind}_{object_id}_status"
+
+    @property
+    def native_value(self) -> str | None:
+        return _status(self.item())
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        item = self.item()
+        return {key: value for key, value in item.items() if key not in {"status", "state", "connectionState", "powerState"}}
+
+
+class ResourceFieldSensor(VeeamOneEntity, SensorEntity):
+    """A useful numeric/timestamp field on an individual resource."""
+
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    DEFINITIONS: dict[str, tuple[str, str | None, SensorDeviceClass | None]] = {
+        "lastRun": ("Last Run", None, SensorDeviceClass.TIMESTAMP),
+        "lastBestPracticeCheckDate": ("Last Best Practice Check", None, SensorDeviceClass.TIMESTAMP),
+        "lastRunDurationSec": ("Last Run Duration", "s", SensorDeviceClass.DURATION),
+        "avgDurationSec": ("Average Run Duration", "s", SensorDeviceClass.DURATION),
+        "lastTransferredDataBytes": ("Last Transferred Data", "B", SensorDeviceClass.DATA_SIZE),
+        "capacityBytes": ("Capacity", "B", SensorDeviceClass.DATA_SIZE),
+        "freeSpaceBytes": ("Free Space", "B", SensorDeviceClass.DATA_SIZE),
+        "runningTasks": ("Running Tasks", None, None),
+        "maxConcurrentTasks": ("Max Concurrent Tasks", None, None),
+        "outOfSpaceInDays": ("Days Until Out of Space", "d", SensorDeviceClass.DURATION),
+        "cpuCount": ("CPU Cores", None, None),
+        "cpuFrequencyMhz": ("CPU Frequency", "MHz", SensorDeviceClass.FREQUENCY),
+        "memorySizeBytes": ("Memory", "B", SensorDeviceClass.DATA_SIZE),
+        "memoryReserveMb": ("Memory Reserve", "MB", SensorDeviceClass.DATA_SIZE),
+    }
+
+    def __init__(self, coordinator: VeeamOneCoordinator, kind: str, object_id: str, name: str, field: str) -> None:
+        super().__init__(coordinator, kind, object_id, name)
+        label, unit, device_class = self.DEFINITIONS[field]
         self.field = field
+        self._attr_name = label
         self._attr_unique_id = f"{coordinator.entry_id}_{kind}_{object_id}_{field}"
         self._attr_native_unit_of_measurement = unit
-
-    def _item(self) -> dict[str, Any]:
-        return next(
-            (
-                item
-                for item in self.coordinator.data.get("collections", {}).get(self.kind, [])
-                if str(item.get("id") or item.get("uid") or item.get("resourceId")) == self.object_id
-            ),
-            {},
-        )
+        self._attr_device_class = device_class
 
     @property
     def native_value(self) -> Any:
-        return self._item().get(self.field)
+        value = self.item().get(self.field)
+        if self._attr_device_class == SensorDeviceClass.TIMESTAMP:
+            return _timestamp(value)
+        return value
+
+
+class ResourcePercentageSensor(VeeamOneEntity, SensorEntity):
+    """Free-space percentage for resources reporting capacity and free space."""
+
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_native_unit_of_measurement = "%"
+
+    def __init__(self, coordinator: VeeamOneCoordinator, kind: str, object_id: str, name: str) -> None:
+        super().__init__(coordinator, kind, object_id, name)
+        self._attr_name = "Free Space"
+        self._attr_unique_id = f"{coordinator.entry_id}_{kind}_{object_id}_free_percent"
+
+    @property
+    def native_value(self) -> float | None:
+        item = self.item()
+        capacity, free = item.get("capacityBytes"), item.get("freeSpaceBytes")
+        if not isinstance(capacity, (int, float)) or not capacity:
+            return None
+        if not isinstance(free, (int, float)):
+            return None
+        return round(free * 100 / capacity, 1)
+
+
+class ResourceBooleanSensor(VeeamOneEntity, SensorEntity):
+    """Expose useful boolean resource properties."""
+
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_icon = "mdi:toggle-switch-outline"
+
+    FIELDS = {
+        "isImmutable": "Immutable",
+        "upgradeRequired": "Upgrade Required",
+        "isReFs": "ReFS",
+        "isCloudConnect": "Cloud Connect",
+        "isConfigurationBackupEnabled": "Configuration Backup Enabled",
+        "intelligentDiagnosticsEnabled": "Intelligent Diagnostics Enabled",
+        "remediationActionsEnabled": "Remediation Actions Enabled",
+    }
+
+    def __init__(self, coordinator: VeeamOneCoordinator, kind: str, object_id: str, name: str, field: str) -> None:
+        super().__init__(coordinator, kind, object_id, name)
+        self.field = field
+        self._attr_name = self.FIELDS[field]
+        self._attr_unique_id = f"{coordinator.entry_id}_{kind}_{object_id}_{field}"
+
+    @property
+    def native_value(self) -> int | None:
+        value = self.item().get(self.field)
+        return None if value is None else int(bool(value))
 
 
 class LicenseSensor(CoordinatorEntity[VeeamOneCoordinator], SensorEntity):
-    """Expose a field from the installed Veeam ONE license."""
+    """Expose a Veeam ONE license field."""
 
     _attr_has_entity_name = True
     _attr_entity_category = EntityCategory.DIAGNOSTIC
@@ -146,40 +224,28 @@ class LicenseSensor(CoordinatorEntity[VeeamOneCoordinator], SensorEntity):
 
     @property
     def device_info(self) -> dict[str, Any]:
-        return {
-            "identifiers": {(DOMAIN, self.coordinator.entry_id)},
-            "name": "Veeam ONE",
-            "manufacturer": "Veeam",
-            "model": "Veeam ONE",
-        }
+        return {"identifiers": {(DOMAIN, self.coordinator.entry_id)}, "name": "Veeam ONE",
+                "manufacturer": "Veeam", "model": "Veeam ONE"}
 
 
 class LicenseExpirationSensor(LicenseSensor):
-    """Days remaining until the Veeam ONE license expires."""
+    """Days remaining until license expiration."""
 
     def __init__(self, coordinator: VeeamOneCoordinator) -> None:
         super().__init__(coordinator, "expiration_days", "License Days Remaining")
         self._attr_native_unit_of_measurement = "d"
-        self._attr_icon = "mdi:calendar-clock"
 
     @property
     def native_value(self) -> int | None:
         value = self.coordinator.data.get("license", {}).get("expirationDate")
-        if not value:
+        expiration = _timestamp(value)
+        if expiration is None:
             return None
-        from datetime import datetime, timezone
-
-        try:
-            expiration = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-        except ValueError:
-            return None
-        if expiration.tzinfo is None:
-            expiration = expiration.replace(tzinfo=timezone.utc)
         return max(0, (expiration - datetime.now(timezone.utc)).days)
 
 
 class LicenseUsageSensor(CoordinatorEntity[VeeamOneCoordinator], SensorEntity):
-    """Expose a current Veeam ONE license usage value."""
+    """Expose current license usage."""
 
     _attr_has_entity_name = True
     _attr_entity_category = EntityCategory.DIAGNOSTIC
@@ -188,10 +254,8 @@ class LicenseUsageSensor(CoordinatorEntity[VeeamOneCoordinator], SensorEntity):
         super().__init__(coordinator)
         self.unit = str(unit.get("licenseUnit") or "Unknown")
         self.field = field
-        label = field.capitalize()
-        self._attr_name = f"License {self.unit} {label}"
-        slug = self.unit.lower().replace(" ", "_")
-        self._attr_unique_id = f"{coordinator.entry_id}_license_{slug}_{field}"
+        self._attr_name = f"License {self.unit} {field.capitalize()}"
+        self._attr_unique_id = f"{coordinator.entry_id}_license_{self.unit.lower().replace(' ', '_')}_{field}"
         self._attr_icon = "mdi:counter"
 
     @property
@@ -199,41 +263,59 @@ class LicenseUsageSensor(CoordinatorEntity[VeeamOneCoordinator], SensorEntity):
         for unit in self.coordinator.data.get("license_usage", {}).get("units", []) or []:
             if str(unit.get("licenseUnit") or "Unknown") == self.unit:
                 value = unit.get(self.field)
-                try:
-                    return int(value) if value is not None else None
-                except (TypeError, ValueError):
-                    return None
+                return int(value) if isinstance(value, (int, float)) else None
         return None
 
     @property
     def device_info(self) -> dict[str, Any]:
-        return {
-            "identifiers": {(DOMAIN, self.coordinator.entry_id)},
-            "name": "Veeam ONE",
-            "manufacturer": "Veeam",
-            "model": "Veeam ONE",
-        }
+        return {"identifiers": {(DOMAIN, self.coordinator.entry_id)}, "name": "Veeam ONE",
+                "manufacturer": "Veeam", "model": "Veeam ONE"}
+
+
+def _resource_entities(coordinator: VeeamOneCoordinator) -> list[SensorEntity]:
+    entities: list[SensorEntity] = []
+    for kind in COLLECTIONS:
+        for item in coordinator.data.get("collections", {}).get(kind, []):
+            object_id = resource_id(item)
+            if not object_id:
+                continue
+            name = resource_name(item, object_id)
+            entities.append(ResourceStatusSensor(coordinator, kind, object_id, name))
+            for field in ResourceFieldSensor.DEFINITIONS:
+                if item.get(field) is not None:
+                    entities.append(ResourceFieldSensor(coordinator, kind, object_id, name, field))
+            if item.get("capacityBytes") is not None and item.get("freeSpaceBytes") is not None:
+                entities.append(ResourcePercentageSensor(coordinator, kind, object_id, name))
+            for field in ResourceBooleanSensor.FIELDS:
+                if item.get(field) is not None:
+                    entities.append(ResourceBooleanSensor(coordinator, kind, object_id, name, field))
+    return entities
 
 
 async def async_setup_entry(hass: Any, entry: Any, async_add_entities: Any) -> None:
     """Set up Veeam ONE sensors."""
     coordinator: VeeamOneCoordinator = entry.runtime_data
-    entities: list[SensorEntity] = [
-        OverviewSensor(coordinator),
-        LicenseSensor(coordinator, "type", "License Type"),
-        LicenseSensor(coordinator, "package", "License Package"),
-        LicenseSensor(coordinator, "instances", "Licensed Instances"),
-        LicenseSensor(coordinator, "sockets", "Licensed Sockets"),
-        LicenseExpirationSensor(coordinator),
-    ]
-
+    entities: list[SensorEntity] = [OverviewSensor(coordinator)]
+    for key in ("type", "package", "instances", "sockets"):
+        entities.append(LicenseSensor(coordinator, key, f"License {key.capitalize()}"))
+    entities.append(LicenseExpirationSensor(coordinator))
     for unit in coordinator.data.get("license_usage", {}).get("units", []) or []:
         if isinstance(unit, dict):
             for field in ("used", "available", "licensed"):
                 entities.append(LicenseUsageSensor(coordinator, unit, field))
-
     for key in COLLECTIONS:
-        entities.append(CollectionSensor(coordinator, key))
-        entities.append(FailedCollectionSensor(coordinator, key))
-
+        entities.extend((CollectionSensor(coordinator, key), FailedCollectionSensor(coordinator, key)))
+    entities.extend(_resource_entities(coordinator))
     async_add_entities(entities)
+
+    known: set[str] = {entity.unique_id for entity in entities if entity.unique_id}
+    async def _sync() -> None:
+        nonlocal known
+        new_entities = []
+        for entity in _resource_entities(coordinator):
+            if entity.unique_id and entity.unique_id not in known:
+                known.add(entity.unique_id)
+                new_entities.append(entity)
+        if new_entities:
+            async_add_entities(new_entities)
+    entry.async_on_unload(coordinator.async_add_listener(_sync))
