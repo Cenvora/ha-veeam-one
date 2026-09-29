@@ -55,10 +55,26 @@ class ServiceSensor(AggregateEntity, SensorEntity):
         self._attr_unique_id = f"{coordinator.entry_id}_service_{key}"
     @property
     def native_value(self) -> Any:
+        aliases = {
+            "status": ("status", "state", "serviceStatus"),
+            "version": ("version", "versionString", "productVersion"),
+            "build": ("build", "buildNumber", "buildVersion"),
+        }
         for source in ("service", "about"):
-            value = self.coordinator.data.get(source, {}).get(self.key)
-            if value is not None:
-                return value
+            data = self.coordinator.data.get(source, {})
+            for key in aliases.get(self.key, (self.key,)):
+                value = data.get(key)
+                if isinstance(value, dict):
+                    value = next(
+                        (
+                            value[name]
+                            for name in aliases.get(self.key, ())
+                            if value.get(name) is not None
+                        ),
+                        None,
+                    )
+                if isinstance(value, (str, int, float, bool)):
+                    return value
         return None
 
 class AlarmSeveritySensor(AggregateEntity, SensorEntity):
