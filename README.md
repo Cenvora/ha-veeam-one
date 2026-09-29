@@ -15,7 +15,42 @@ The integration uses Veeam ONE's v2.3 monitoring API across:
 - **Public Cloud** — cloud VMs, databases, file shares and their protected/backup resources
 - **Veeam ONE** — service/about information, licensing and triggered alarms
 
-The integration exposes collection counts and "not healthy" counts as Home Assistant sensors, plus the overall Veeam ONE connectivity and triggered-alarm state.
+## Entities
+
+Each resource returned by the monitoring API is represented as a Home Assistant device. Resource entities are created dynamically as resources appear and include the fields that are available for that resource.
+
+Common resource entities include:
+
+- **Status** — Veeam ONE status, state, connection state or power state
+- **Problem** — binary health indicator
+- **Last Run** and **Last Run Duration** for workloads that report job sessions
+- **Average Run Duration** and **Last Transferred Data** where available
+- **Capacity**, **Free Space**, **Free Space Percentage**, **Running Tasks** and **Days Until Out of Space** for repositories/resources that expose those values
+- **CPU, memory and host information** where reported
+- **Configuration/diagnostic flags** such as immutable, ReFS, Cloud Connect and upgrade-required state
+- The complete returned resource payload is also retained as attributes on the resource Status entity, so API fields not promoted to their own entity remain available
+
+Aggregate diagnostic sensors are also provided for every monitored collection, including total and not-healthy counts.
+
+### Licensing
+
+The Veeam ONE device exposes:
+
+- License type and package
+- Licensed instances and sockets
+- License company
+- License expiration and support-expiration countdowns
+- Current license-unit usage: used, available and licensed
+
+### Alarms
+
+Triggered alarms are exposed individually and receive a **Resolve** button. Resolving an alarm uses the Veeam ONE REST API and refreshes the integration afterward.
+
+## Actions
+
+Veeam ONE 2.3 exposes alarm-resolution operations, so alarm resolve buttons are implemented.
+
+The Veeam ONE 2.3 API does **not** expose the VBR job start/stop/retry/enable/disable or repository-rescan operations. Those actions therefore are not fabricated in this integration; use the Veeam Backup & Replication API/integration for operational VBR controls.
 
 ## Installation
 
