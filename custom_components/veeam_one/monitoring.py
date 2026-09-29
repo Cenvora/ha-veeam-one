@@ -131,9 +131,7 @@ class CollectionHealthSensor(AggregateEntity, SensorEntity):
         known = [item for item in resources if _status(item)]
         if not known:
             return None
-        healthy = sum(
-            1 for item in known if _healthy(_status(item) or "")
-        )
+        healthy = sum(1 for item in known if _healthy(_status(item) or ""))
         return round(healthy * 100 / len(known), 1)
 
 
