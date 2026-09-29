@@ -2,15 +2,20 @@
 
 Home Assistant integration for Veeam ONE using the Cenvora `veeam-one` Python client and Veeam ONE REST API 2.3.
 
-## Features
+## Monitoring coverage
 
-- Veeam ONE connectivity and health
-- Triggered alarm count and per-alarm details
-- Resolve triggered alarms from Home Assistant
-- Veeam Backup & Replication VM backup, replication and backup copy jobs
-- Backup repository capacity, free space, task count and state
-- Monitored Veeam Backup & Replication server connection state and version
-- Veeam ONE license information
+The integration uses Veeam ONE's v2.3 monitoring API across:
+
+- **Veeam Backup & Replication** — backup, replication and backup copy jobs; repositories; backup servers
+- **Veeam Cloud Connect** — tenants, cloud gateways and gateway pools
+- **Veeam Backup for Microsoft 365** — organizations, servers, proxies, repositories, object storage, backup/copy jobs and protected Microsoft 365 objects
+- **VMware vSphere** — vCenters, hosts, clusters, datastores, datastore clusters, resource pools, VMs and vApps
+- **VMware Cloud Director** — Cloud Director servers, organizations, organization/provider VDCs, datastores and vApps
+- **Microsoft Hyper-V** — hosts, clusters, VMs, file servers/shares, physical disks and SCVMM servers
+- **Public Cloud** — cloud VMs, databases, file shares and their protected/backup resources
+- **Veeam ONE** — service/about information, licensing and triggered alarms
+
+The integration exposes collection counts and "not healthy" counts as Home Assistant sensors, plus the overall Veeam ONE connectivity and triggered-alarm state.
 
 ## Installation
 
