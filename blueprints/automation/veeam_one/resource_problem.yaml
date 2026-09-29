@@ -1,0 +1,151 @@
+blueprint:
+  name: Veeam ONE resource problem
+  description: >-
+    Notify when a job, repository or server that Veeam ONE monitors reports a problem, and
+    optionally again when it is fine again.
+
+    Pick the **Problem** sensors of the resources to watch: Veeam Backup & Replication backup,
+    replication and backup copy jobs, repositories and backup servers, and Microsoft 365
+    servers, proxies and jobs each have one. Problem turns on for Failed, Warning, Error,
+    Disconnected, Inaccessible, OutOfDate, NotResponding and Offline, so this covers a job
+    failing as well as a backup server losing its connection. The message says which status
+    it reports.
+
+    The server device's per-collection problem sensors (for example *VBR Backup Jobs problem*)
+    work too, for one alert whichever job it is.
+
+    A resource whose status changes from one problem to another (Warning to Failed) stays a
+    problem, so it is not reported again. Reloading the integration or restarting Home
+    Assistant does not re-report problems that were already there.
+  domain: automation
+  source_url: https://github.com/Cenvora/ha-veeam-one/blob/main/blueprints/automation/veeam_one/resource_problem.yaml
+  author: Cenvora
+  input:
+    problem_sensors:
+      name: Problem sensors
+      description: One or more Veeam ONE "Problem" sensors.
+      selector:
+        entity:
+          multiple: true
+          filter:
+            - integration: veeam_one
+              domain: binary_sensor
+              device_class: problem
+    problem_for:
+      name: Problem for
+      description: >-
+        How long the problem must last before notifying. Leave at zero for jobs; a few minutes
+        keeps a server or repository that drops out briefly from raising an alert.
+      default:
+        minutes: 0
+      selector:
+        duration:
+    notification_action:
+      name: Notification action
+      description: >-
+        What to run when a resource reports a problem. Available variables: `resource_name`,
+        `resource_kind` (for example "VBR Backup Job"), `status`, `problem_entity_id`, and
+        ready-made `title` and `message`.
+      selector:
+        action:
+    recovery_action:
+      name: Recovery action
+      description: >-
+        Optional. What to run when the resource no longer reports a problem. The same variables
+        are available.
+      default: []
+      selector:
+        action:
+
+# Several jobs can fail in the same polling cycle
+mode: queued
+max: 25
+
+# A reload takes every entity through unavailable, and both triggers pin from and to, so
+# "unavailable -> on" is not a new problem. Nor is "unknown -> on": Problem is unknown while
+# Veeam ONE reports the status as Unknown.
+triggers:
+  - trigger: state
+    entity_id: !input problem_sensors
+    from: "off"
+    to: "on"
+    for: !input problem_for
+    id: problem
+  - trigger: state
+    entity_id: !input problem_sensors
+    from: "on"
+    to: "off"
+    id: recovered
+
+variables:
+  problem_for: !input problem_for
+  problem_entity_id: "{{ trigger.entity_id }}"
+  # Each resource is its own device, named "Veeam ONE <name>"; the prefix is dropped. The
+  # per-collection sensors live on the server device itself, named "Veeam ONE", so their own
+  # name ("VBR Backup Jobs problem") is used instead. A name the user gave the device is kept.
+  resource_name: >-
+    {%- set by_user = device_attr(trigger.entity_id, 'name_by_user') -%}
+    {%- set name = (device_attr(trigger.entity_id, 'name') or '') | regex_replace('^Veeam ONE ', '') -%}
+    {%- set on_server = (device_attr(trigger.entity_id, 'model') or '') == 'Veeam ONE' -%}
+    {%- if on_server or name in ['', 'Veeam ONE'] -%}
+      {{ trigger.to_state.name | regex_replace('^Veeam ONE ', '')
+         | regex_replace('(?i) problem$', '') }}
+    {%- elif by_user -%}
+      {{ by_user }}
+    {%- else -%}
+      {{ name }}
+    {%- endif -%}
+  # The device model is the kind of resource ("VBR Repository"); the server's is "Veeam ONE"
+  resource_kind: >-
+    {%- set model = device_attr(trigger.entity_id, 'model') or '' -%}
+    {{ '' if model == 'Veeam ONE' else model }}
+  # The Status sensor on the same device holds the status Veeam ONE reported
+  status_entity: >-
+    {{ (device_entities(device_id(trigger.entity_id)) or [])
+       | select('search', '^sensor[.].*_status$') | list | first | default('') }}
+  status: >-
+    {%- set value = states(status_entity) if status_entity else '' -%}
+    {{ '' if value | lower in ['', 'unknown', 'unavailable'] else value }}
+  label: "{{ resource_name ~ (' (' ~ resource_kind ~ ')' if resource_kind else '') }}"
+  problem_for_seconds: >-
+    {{ ((problem_for.days | default(0) | float(0)) * 86400
+        + (problem_for.hours | default(0) | float(0)) * 3600
+        + (problem_for.minutes | default(0) | float(0)) * 60
+        + (problem_for.seconds | default(0) | float(0)))
+       if problem_for is mapping else 0 }}
+  problem_lasted: >-
+    {{ (trigger.to_state.last_changed - trigger.from_state.last_changed).total_seconds()
+       if trigger.id == 'recovered' else 0 }}
+  title: >-
+    {%- if trigger.id == 'recovered' -%}
+      Veeam ONE: {{ resource_name }} is OK again
+    {%- elif status -%}
+      Veeam ONE: {{ resource_name }} reports {{ status }}
+    {%- else -%}
+      Veeam ONE: problem with {{ resource_name }}
+    {%- endif -%}
+  message: >-
+    {%- if trigger.id == 'recovered' -%}
+      {{ label }} {{ 'is back to ' ~ status if status else 'no longer reports a problem' }}.
+    {%- elif status -%}
+      {{ label }} reports status {{ status }} in Veeam ONE.
+    {%- else -%}
+      {{ label }} reports a problem in Veeam ONE.
+    {%- endif -%}
+
+conditions:
+  # A problem shorter than "Problem for" raised no alert, so it gets no recovery either
+  - condition: template
+    value_template: >-
+      {{ trigger.id == 'problem' or problem_lasted | float(0) >= problem_for_seconds | float(0) }}
+
+actions:
+  - choose:
+      - conditions:
+          - condition: trigger
+            id: problem
+        sequence: !input notification_action
+      - conditions:
+          - condition: trigger
+            id: recovered
+        sequence: !input recovery_action

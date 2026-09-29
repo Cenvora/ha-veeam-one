@@ -1,0 +1,118 @@
+blueprint:
+  name: Veeam ONE server unreachable
+  description: >-
+    Notify when Home Assistant cannot reach a Veeam ONE server, and optionally again when it
+    answers again.
+
+    Pick the server's **Connected** sensor. It turns off when a poll of the REST API fails —
+    the server is down, the Veeam ONE Web Services are stopped, or the network is in the way —
+    and while it is off every other Veeam ONE entity is unavailable, so none of the other
+    blueprints can notice anything either.
+
+    Polls run every minute and a single slow one can fail, so the outage has to last a few
+    minutes before anything is sent. A recovery is only sent after an outage that was reported.
+  domain: automation
+  source_url: https://github.com/Cenvora/ha-veeam-one/blob/main/blueprints/automation/veeam_one/server_unreachable.yaml
+  author: Cenvora
+  input:
+    connected_sensors:
+      name: Connected sensors
+      description: The "Connected" sensor of one or more Veeam ONE servers.
+      selector:
+        entity:
+          multiple: true
+          filter:
+            - integration: veeam_one
+              domain: binary_sensor
+              device_class: connectivity
+    offline_for:
+      name: Unreachable for
+      description: How long the server must stay unreachable before notifying.
+      default:
+        minutes: 5
+      selector:
+        duration:
+    notification_action:
+      name: Notification action
+      description: >-
+        What to run when a server is unreachable. Available variables: `server_name`,
+        `entry_id`, `connected_entity_id`, and ready-made `title` and `message`.
+      selector:
+        action:
+    recovery_action:
+      name: Recovery action
+      description: >-
+        Optional. What to run when the server answers again. The same variables are available.
+      default: []
+      selector:
+        action:
+
+mode: queued
+max: 10
+
+# Connected stays available while the server is down, and both triggers pin from and to, so a
+# reload (on -> unavailable -> on) cannot raise an alert or a recovery.
+triggers:
+  - trigger: state
+    entity_id: !input connected_sensors
+    from: "on"
+    to: "off"
+    for: !input offline_for
+    id: offline
+  - trigger: state
+    entity_id: !input connected_sensors
+    from: "off"
+    to: "on"
+    id: online
+
+variables:
+  offline_for: !input offline_for
+  connected_entity_id: "{{ trigger.entity_id }}"
+  entry_id: "{{ config_entry_id(trigger.entity_id) or '' }}"
+  # The entry is titled "Veeam ONE (<host>)"; the host is what reads well. A title or device
+  # name the user chose is used as-is.
+  server_name: >-
+    {%- set by_user = device_attr(trigger.entity_id, 'name_by_user') -%}
+    {%- set title = config_entry_attr(entry_id, 'title') if entry_id else none -%}
+    {%- if by_user -%}
+      {{ by_user }}
+    {%- elif title and title.startswith('Veeam ONE (') and title.endswith(')') -%}
+      {{ title[11:-1] }}
+    {%- else -%}
+      {{ title or 'Veeam ONE' }}
+    {%- endif -%}
+  offline_for_seconds: >-
+    {{ ((offline_for.days | default(0) | float(0)) * 86400
+        + (offline_for.hours | default(0) | float(0)) * 3600
+        + (offline_for.minutes | default(0) | float(0)) * 60
+        + (offline_for.seconds | default(0) | float(0)))
+       if offline_for is mapping else 0 }}
+  outage_lasted: >-
+    {{ (trigger.to_state.last_changed - trigger.from_state.last_changed).total_seconds()
+       if trigger.id == 'online' else 0 }}
+  title: >-
+    {{ 'Veeam ONE unreachable: ' ~ server_name
+       if trigger.id == 'offline'
+       else 'Veeam ONE reachable again: ' ~ server_name }}
+  message: >-
+    {{ 'Home Assistant has not been able to reach Veeam ONE on ' ~ server_name
+       ~ ' for a while. Its alarms and monitoring data are unavailable until it answers.'
+       if trigger.id == 'offline'
+       else 'Veeam ONE on ' ~ server_name ~ ' is answering again.' }}
+
+conditions:
+  # An outage shorter than "Unreachable for" raised no alert, so it gets no recovery either
+  - condition: template
+    value_template: >-
+      {{ trigger.id == 'offline' or outage_lasted | float(0) >= offline_for_seconds | float(0) }}
+
+actions:
+  - choose:
+      - conditions:
+          - condition: trigger
+            id: offline
+        sequence: !input notification_action
+      - conditions:
+          - condition: trigger
+            id: online
+        sequence: !input recovery_action

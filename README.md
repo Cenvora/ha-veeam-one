@@ -122,6 +122,80 @@ If one collection fails to load, for example because Veeam ONE doesn't monitor t
 
 When the Veeam ONE license is within 30 days of expiring, or has expired, a repair issue appears under **Settings → Repairs**. It clears on its own once Veeam ONE reports a renewed license.
 
+## Automation Blueprints
+
+Ready-made automations for the entities this integration creates. Each one asks you to pick
+the entities to watch and what to do about it — a notification, a script, anything Home
+Assistant can run — so they work with whatever notifier you already use.
+
+Click **Import blueprint**, then create automations from it under
+**Settings → Automations & scenes → Blueprints**.
+
+> [!NOTE]
+> Blueprints are not installed by HACS — Home Assistant has no mechanism for an integration to
+> ship them, and HACS has no blueprint category. The import links below fetch them from this
+> repository directly.
+
+### Alarm triggered
+
+Fires when Veeam ONE raises a new alarm or one escalates from Warning to Error, and optionally when alarms are resolved. Watches the `alarms` attribute of **Active alarms**, so each alarm is reported once. Hands your action the `alarm_ids` and `entry_id` that [`veeam_one.resolve_alarm`](#veeam_oneresolve_alarm) needs.
+
+[![Import blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fraw.githubusercontent.com%2FCenvora%2Fha-veeam-one%2Fmain%2Fblueprints%2Fautomation%2Fveeam_one%2Falarm_triggered.yaml)
+
+<sub>Source: [`alarm_triggered.yaml`](blueprints/automation/veeam_one/alarm_triggered.yaml)</sub>
+
+### Server unreachable
+
+Fires when the **Connected** sensor stays off — Home Assistant can't reach the Veeam ONE REST API — and optionally when it answers again.
+
+[![Import blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fraw.githubusercontent.com%2FCenvora%2Fha-veeam-one%2Fmain%2Fblueprints%2Fautomation%2Fveeam_one%2Fserver_unreachable.yaml)
+
+<sub>Source: [`server_unreachable.yaml`](blueprints/automation/veeam_one/server_unreachable.yaml)</sub>
+
+### Resource problem
+
+Fires when a job, repository or server's **Problem** sensor turns on, saying which status Veeam ONE reported (Failed, Disconnected, ...), and optionally when it clears.
+
+[![Import blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fraw.githubusercontent.com%2FCenvora%2Fha-veeam-one%2Fmain%2Fblueprints%2Fautomation%2Fveeam_one%2Fresource_problem.yaml)
+
+<sub>Source: [`resource_problem.yaml`](blueprints/automation/veeam_one/resource_problem.yaml)</sub>
+
+### Repository running out of space
+
+Fires when a repository's **Free space percentage** stays below a threshold, with an optional recovery notification.
+
+[![Import blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fraw.githubusercontent.com%2FCenvora%2Fha-veeam-one%2Fmain%2Fblueprints%2Fautomation%2Fveeam_one%2Frepository_space_low.yaml)
+
+<sub>Source: [`repository_space_low.yaml`](blueprints/automation/veeam_one/repository_space_low.yaml)</sub>
+
+### Repository out-of-space forecast
+
+Fires when Veeam ONE's **Days until out of space** forecast for a repository drops below a number of days, so there is time to add capacity.
+
+[![Import blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fraw.githubusercontent.com%2FCenvora%2Fha-veeam-one%2Fmain%2Fblueprints%2Fautomation%2Fveeam_one%2Frepository_out_of_space_forecast.yaml)
+
+<sub>Source: [`repository_out_of_space_forecast.yaml`](blueprints/automation/veeam_one/repository_out_of_space_forecast.yaml)</sub>
+
+### License expiring soon
+
+Daily reminder once the license or its support contract is within N days of expiring, or has expired.
+
+[![Import blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fraw.githubusercontent.com%2FCenvora%2Fha-veeam-one%2Fmain%2Fblueprints%2Fautomation%2Fveeam_one%2Flicense_expiring.yaml)
+
+<sub>Source: [`license_expiring.yaml`](blueprints/automation/veeam_one/license_expiring.yaml)</sub>
+
+### Running out of licenses
+
+Fires when a license unit's **used percentage** crosses a threshold, and optionally when it drops back.
+
+[![Import blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fraw.githubusercontent.com%2FCenvora%2Fha-veeam-one%2Fmain%2Fblueprints%2Fautomation%2Fveeam_one%2Flicense_usage_high.yaml)
+
+<sub>Source: [`license_usage_high.yaml`](blueprints/automation/veeam_one/license_usage_high.yaml)</sub>
+
+Veeam ONE fires no events of its own, so every blueprint reacts to entity states. Reloading
+the integration or restarting Home Assistant takes the entities through unavailable; none of
+the blueprints treat coming back from that as something new to report.
+
 ## Examples
 
 Notify when a backup job reports a problem:
