@@ -1,0 +1,9 @@
+"""Constants for the Veeam ONE integration."""
+DOMAIN="veeam_one"
+DEFAULT_NAME="Veeam ONE"
+CONF_VERIFY_SSL="verify_ssl"
+DEFAULT_PORT=1239
+DEFAULT_VERIFY_SSL=True
+UPDATE_INTERVAL=60
+UPDATE_TIMEOUT=180
+PAGE_LIMIT=1000
