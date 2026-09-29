@@ -42,7 +42,7 @@ async def async_setup_entry(hass,entry,async_add_entities):
     }.items():
         for x in c.data.get(kind,[]):
             oid=str(x.get(IDS[kind]))
-            if oid!="None":e.extend(ObjectSensor(c,kind,oid,n,f,unit if len(spec)>2 else None) for spec in fields for n,f,*unit in [spec])
+            if oid!="None":e.extend(ObjectSensor(c,kind,oid,n,f,unit if len(spec)>2 else None) for spec in fields for n,f,*rest in [spec] for unit in [rest[0] if rest else None])
     for f,n in [("type","License Type"),("package","License Package"),("company","Licensed To"),("instances","Licensed Instances"),("sockets","Licensed Sockets"),("expirationDate","License Expiration"),("supportExpirationDate","Support Expiration")]:
         if f in c.data.get("license",{}):e.append(ObjectSensor(c,"license","license",n,f))
     async_add_entities(e)
