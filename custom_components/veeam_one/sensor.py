@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
+from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
 from homeassistant.const import EntityCategory
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -350,7 +350,7 @@ class AlarmRepeatCountSensor(VeeamOneEntity, SensorEntity):
     """Number of times an alarm has triggered."""
 
     _attr_entity_category = EntityCategory.DIAGNOSTIC
-    _attr_state_class = "measurement"
+    _attr_state_class = SensorStateClass.MEASUREMENT
 
     def __init__(self, coordinator: VeeamOneCoordinator, object_id: str, name: str) -> None:
         super().__init__(coordinator, "alarms", object_id, name)
