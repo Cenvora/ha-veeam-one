@@ -1,0 +1,14 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to Veeam ONE",
+        "description": "Enter your Veeam ONE REST API connection details.",
+        "data": {"host":"Host","port":"Port","username":"Username","password":"Password","verify_ssl":"Verify SSL Certificate"},
+        "data_description": {"port":"REST API port (default: 1239)"}
+      }
+    },
+    "error": {"cannot_connect":"Failed to connect to Veeam ONE","invalid_auth":"Invalid authentication credentials","unknown":"Unexpected error occurred"},
+    "abort": {"already_configured":"This Veeam ONE server is already configured"}
+  }
+}
