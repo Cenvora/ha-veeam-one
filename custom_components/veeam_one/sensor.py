@@ -106,11 +106,7 @@ class FailedCollectionSensor(CollectionSensor):
     @property
     def native_value(self) -> int:
         resources = self.coordinator.data.get("collections", {}).get(self.key, [])
-        return sum(
-            1
-            for item in resources
-            if (state := _status(item)) and not _healthy(state)
-        )
+        return sum(\n            1 for item in resources if (state := _status(item)) and not _healthy(state)\n        )
 
 
 class ResourceStatusSensor(VeeamOneEntity, SensorEntity):
