@@ -1,4 +1,5 @@
 """Additional Veeam ONE binary monitoring entities."""
+
 from __future__ import annotations
 
 from datetime import datetime, timezone
