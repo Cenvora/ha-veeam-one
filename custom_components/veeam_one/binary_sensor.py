@@ -106,12 +106,14 @@ def _resource_entities(coordinator: VeeamOneCoordinator) -> list[ResourceProblem
 async def async_setup_entry(hass: Any, entry: Any, async_add_entities: Any) -> None:
     """Set up connectivity and per-resource problem sensors."""
     coordinator: VeeamOneCoordinator = entry.runtime_data
-    async_add_entities([
-        Connected(coordinator),
-        LicenseExpiredSensor(coordinator),
-        LicenseSupportExpiredSensor(coordinator),
-        *(CollectionProblemSensor(coordinator, key) for key in COLLECTIONS),
-    ])
+    async_add_entities(
+        [
+            Connected(coordinator),
+            LicenseExpiredSensor(coordinator),
+            LicenseSupportExpiredSensor(coordinator),
+            *(CollectionProblemSensor(coordinator, key) for key in COLLECTIONS),
+        ]
+    )
 
     entities = _resource_entities(coordinator)
     async_add_entities(entities)
