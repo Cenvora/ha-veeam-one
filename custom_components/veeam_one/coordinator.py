@@ -123,6 +123,7 @@ class VeeamOneCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     "about": as_dict(about),
                     "service": as_dict(service),
                     "license": as_dict(license_info),
+                    "license_usage": as_dict(license_usage),
                     "alarms": alarms,
                     "collections": {
                         key: value
