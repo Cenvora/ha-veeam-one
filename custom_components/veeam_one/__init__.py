@@ -6,7 +6,7 @@ from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from veeam_one import VeeamAuthenticationError
-from .const import DOMAIN, UPDATE_TIMEOUT
+from .const import UPDATE_TIMEOUT
 from .coordinator import VeeamOneCoordinator
 from .sdk import create_client
 
