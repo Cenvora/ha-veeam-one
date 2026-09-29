@@ -112,7 +112,7 @@ class VeeamOneCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def _async_update_data(self) -> dict[str, Any]:
         try:
             async with asyncio.timeout(UPDATE_TIMEOUT):
-                about, service, license_info, alarms, collections = await asyncio.gather(
+                about, service, license_info, license_usage, alarms, collections = await asyncio.gather(
                     self.client.call(self.client.api("about.about_get_about")),
                     self.client.call(self.client.api("about.about_get_service_info")),
                     self.client.call(self.client.api("licensing.licensing_get_info")),
